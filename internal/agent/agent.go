@@ -70,6 +70,11 @@ func (l *Loop) WithStreamCallback(cb StreamCallback) *Loop {
 	return l
 }
 
+// Compactor returns the agent's compactor, or nil if none is set.
+func (l *Loop) Compactor() *compact.Compactor {
+	return l.compactor
+}
+
 // WithConfirmCallback sets a callback for confirming tool execution.
 // Read-only tools (read, grep, find, ls) are auto-approved.
 func (l *Loop) WithConfirmCallback(cb ConfirmCallback) *Loop {

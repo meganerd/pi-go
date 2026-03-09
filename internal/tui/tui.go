@@ -180,6 +180,9 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	case input == "/model":
 		fmt.Fprintf(t.out, "Model: %s\n", t.model)
 		return true, nil
+	case input == "/compact":
+		t.handleCompact()
+		return true, nil
 	default:
 		if strings.HasPrefix(input, "/") {
 			fmt.Fprintf(t.out, "Unknown command: %s\n", input)
@@ -202,6 +205,31 @@ func (t *TUI) printSessionInfo() {
 	fmt.Fprintf(t.out, "Session: %d messages\n", len(msgs))
 }
 
+func (t *TUI) handleCompact() {
+	compactor := t.agent.Compactor()
+	if compactor == nil {
+		fmt.Fprintln(t.out, "Compaction not available (no compactor configured)")
+		return
+	}
+	if t.session == nil {
+		fmt.Fprintln(t.out, "No active session to compact")
+		return
+	}
+	msgs, err := t.session.Messages()
+	if err != nil {
+		fmt.Fprintf(t.err, "Error reading session: %v\n", err)
+		return
+	}
+	tokens := compactor.EstimateTokens(msgs)
+	fmt.Fprintf(t.out, "Context: ~%d tokens across %d messages\n", tokens, len(msgs))
+	if len(msgs) <= 10 {
+		fmt.Fprintln(t.out, "Too few messages to compact")
+		return
+	}
+	fmt.Fprintln(t.out, "Compaction will occur automatically when context exceeds the threshold.")
+	fmt.Fprintf(t.out, "Current estimate: ~%d tokens\n", tokens)
+}
+
 func (t *TUI) printHelp() {
 	fmt.Fprintln(t.out, "Available commands:")
 	fmt.Fprintln(t.out, "  /help     Show this help")
@@ -210,6 +238,7 @@ func (t *TUI) printHelp() {
 	fmt.Fprintln(t.out, "  /usage    Show token usage and cost")
 	fmt.Fprintln(t.out, "  /model    Show current model")
 	fmt.Fprintln(t.out, "  /clear    Clear conversation history")
+	fmt.Fprintln(t.out, "  /compact  Show context size and compaction status")
 	fmt.Fprintln(t.out)
 	fmt.Fprintln(t.out, "Paste multiline input using ``` delimiters:")
 	fmt.Fprintln(t.out, "  > ```")
