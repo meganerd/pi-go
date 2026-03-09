@@ -1,6 +1,9 @@
 BINARY := pi-go
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+PKG := github.com/meganerd/pi-go/internal/version
+LDFLAGS := -ldflags "-X $(PKG).version=$(VERSION) -X $(PKG).commit=$(COMMIT) -X $(PKG).date=$(DATE)"
 
 .PHONY: build test lint clean install
 
