@@ -200,3 +200,81 @@ func TestTUI_UsageDisplay(t *testing.T) {
 		t.Errorf("should show token usage on stderr, got: %s", errOut.String())
 	}
 }
+
+func TestTUI_HelpCommand(t *testing.T) {
+	in := strings.NewReader("/help\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "Available commands") {
+		t.Errorf("should show help, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "/usage") {
+		t.Errorf("help should list /usage command, got: %s", out.String())
+	}
+}
+
+func TestTUI_ModelCommand(t *testing.T) {
+	in := strings.NewReader("/model\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut), WithModel("test-model-x"))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "Model: test-model-x") {
+		t.Errorf("should show model, got: %s", out.String())
+	}
+}
+
+func TestTUI_ClearCommand(t *testing.T) {
+	in := strings.NewReader("/clear\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "Conversation cleared") {
+		t.Errorf("should confirm clear, got: %s", out.String())
+	}
+}
+
+func TestTUI_MultilineInput(t *testing.T) {
+	in := strings.NewReader("```\nline one\nline two\n```\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "Echo: line one\nline two") {
+		t.Errorf("should echo multiline input, got: %s", out.String())
+	}
+}
+
+func TestTUI_UsageCommand(t *testing.T) {
+	in := strings.NewReader("test\n/usage\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "15 tokens") {
+		t.Errorf("should show cumulative usage, got: %s", out.String())
+	}
+}

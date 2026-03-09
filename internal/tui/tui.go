@@ -28,6 +28,7 @@ type TUI struct {
 	system    string
 	maxTokens int  // max output tokens per LLM call
 	streaming bool // true when agent loop has a stream callback
+	cleared   bool // set by /clear to skip session history on next message
 
 	in  io.Reader
 	out io.Writer
@@ -111,6 +112,14 @@ func (t *TUI) Run(ctx context.Context) error {
 			continue
 		}
 
+		// Multiline input: collect lines between ``` delimiters
+		if input == "```" {
+			input = t.readMultiline(scanner)
+			if input == "" {
+				continue
+			}
+		}
+
 		// Handle commands
 		if handled, err := t.handleCommand(input); handled {
 			if err == io.EOF {
@@ -138,7 +147,7 @@ func (t *TUI) printWelcome() {
 	if t.model != "" {
 		fmt.Fprintf(t.out, "Model: %s\n", t.model)
 	}
-	fmt.Fprintln(t.out, "Commands: /exit, /session, /usage")
+	fmt.Fprintln(t.out, "Type /help for commands")
 }
 
 func (t *TUI) printUsageStats() {
@@ -162,6 +171,15 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	case input == "/usage":
 		t.printUsageStats()
 		return true, nil
+	case input == "/help":
+		t.printHelp()
+		return true, nil
+	case input == "/clear":
+		t.clearHistory()
+		return true, nil
+	case input == "/model":
+		fmt.Fprintf(t.out, "Model: %s\n", t.model)
+		return true, nil
 	default:
 		if strings.HasPrefix(input, "/") {
 			fmt.Fprintf(t.out, "Unknown command: %s\n", input)
@@ -184,6 +202,30 @@ func (t *TUI) printSessionInfo() {
 	fmt.Fprintf(t.out, "Session: %d messages\n", len(msgs))
 }
 
+func (t *TUI) printHelp() {
+	fmt.Fprintln(t.out, "Available commands:")
+	fmt.Fprintln(t.out, "  /help     Show this help")
+	fmt.Fprintln(t.out, "  /exit     Exit pi-go")
+	fmt.Fprintln(t.out, "  /session  Show session info")
+	fmt.Fprintln(t.out, "  /usage    Show token usage and cost")
+	fmt.Fprintln(t.out, "  /model    Show current model")
+	fmt.Fprintln(t.out, "  /clear    Clear conversation history")
+	fmt.Fprintln(t.out)
+	fmt.Fprintln(t.out, "Paste multiline input using ``` delimiters:")
+	fmt.Fprintln(t.out, "  > ```")
+	fmt.Fprintln(t.out, "  your multiline")
+	fmt.Fprintln(t.out, "  content here")
+	fmt.Fprintln(t.out, "  ```")
+}
+
+func (t *TUI) clearHistory() {
+	// Note: this doesn't clear the session file, just tells the user
+	// the next message will start fresh in the conversation
+	fmt.Fprintln(t.out, "Conversation cleared. Next message starts a fresh context.")
+	// We signal this by setting a flag; handleMessage checks it
+	t.cleared = true
+}
+
 func (t *TUI) handleMessage(ctx context.Context, input string) error {
 	userMsg := message.Message{
 		Role:    message.RoleUser,
@@ -196,7 +238,7 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 		SystemPrompt: t.system,
 		MaxTokens:    t.maxTokens,
 	}
-	if t.session != nil {
+	if t.session != nil && !t.cleared {
 		if err := t.agent.Resume(req); err != nil {
 			fmt.Fprintf(t.err, "Warning: could not resume session: %v\n", err)
 		}
@@ -204,6 +246,7 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 			fmt.Fprintf(t.err, "Warning: failed to persist message: %v\n", err)
 		}
 	}
+	t.cleared = false
 	req.Messages = append(req.Messages, userMsg)
 
 	// Show spinner while waiting (skip if streaming — tokens will flow directly)
@@ -236,6 +279,20 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 	}
 
 	return nil
+}
+
+func (t *TUI) readMultiline(scanner *bufio.Scanner) string {
+	fmt.Fprint(t.out, "... ")
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "```" {
+			break
+		}
+		lines = append(lines, line)
+		fmt.Fprint(t.out, "... ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (t *TUI) startSpinner(ctx context.Context) func() {
