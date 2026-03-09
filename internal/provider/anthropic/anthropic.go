@@ -347,5 +347,6 @@ func (a *Anthropic) parseResponse(resp *apiResponse) *provider.ChatResponse {
 			InputTokens:  resp.Usage.InputTokens,
 			OutputTokens: resp.Usage.OutputTokens,
 		},
+		StopReason: resp.StopReason,
 	}
 }

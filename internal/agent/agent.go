@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/meganerd/pi-go/internal/compact"
@@ -248,7 +249,9 @@ func (l *Loop) Resume(req *provider.ChatRequest) error {
 
 func (l *Loop) persist(msg *message.Message) {
 	if l.session != nil {
-		_ = l.session.Append(msg)
+		if err := l.session.Append(msg); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to persist message: %v\n", err)
+		}
 	}
 }
 

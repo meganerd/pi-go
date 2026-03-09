@@ -363,5 +363,6 @@ func (o *OpenAI) parseResponse(resp *apiResponse) *provider.ChatResponse {
 			InputTokens:  resp.Usage.PromptTokens,
 			OutputTokens: resp.Usage.CompletionTokens,
 		},
+		StopReason: choice.FinishReason,
 	}
 }
