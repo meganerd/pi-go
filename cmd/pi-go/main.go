@@ -19,6 +19,7 @@ import (
 	"github.com/meganerd/pi-go/internal/et"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/provider/anthropic"
+	"github.com/meganerd/pi-go/internal/render"
 	"github.com/meganerd/pi-go/internal/provider/openai"
 	"github.com/meganerd/pi-go/internal/session"
 	"github.com/meganerd/pi-go/internal/tool"
@@ -204,7 +205,7 @@ func runPrompt(prompt string, loop *agent.Loop, cfg *config.Config, systemPrompt
 
 	// Print response — skip if streaming already printed tokens
 	if !provider.CanStream(loop.Provider()) && resp.Message.Content != "" {
-		fmt.Println(resp.Message.Content)
+		fmt.Println(render.Markdown(resp.Message.Content))
 	} else if provider.CanStream(loop.Provider()) {
 		fmt.Println() // trailing newline after streamed content
 	}

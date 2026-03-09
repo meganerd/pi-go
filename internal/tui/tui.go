@@ -15,6 +15,7 @@ import (
 	"github.com/meganerd/pi-go/internal/agent"
 	"github.com/meganerd/pi-go/internal/message"
 	"github.com/meganerd/pi-go/internal/provider"
+	"github.com/meganerd/pi-go/internal/render"
 	"github.com/meganerd/pi-go/internal/session"
 	"github.com/meganerd/pi-go/internal/usage"
 )
@@ -299,7 +300,7 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 	// Print assistant response (skip if streaming — agent loop already printed tokens)
 	if !t.streaming && resp.Message.Content != "" {
 		fmt.Fprintln(t.out)
-		fmt.Fprintln(t.out, resp.Message.Content)
+		fmt.Fprintln(t.out, render.Markdown(resp.Message.Content))
 	} else if t.streaming {
 		fmt.Fprintln(t.out) // newline after streamed content
 	}
