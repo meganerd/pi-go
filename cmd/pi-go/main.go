@@ -17,9 +17,8 @@ import (
 	"github.com/meganerd/pi-go/internal/session"
 	"github.com/meganerd/pi-go/internal/tool"
 	"github.com/meganerd/pi-go/internal/tui"
+	"github.com/meganerd/pi-go/internal/version"
 )
-
-var version = "dev"
 
 func main() {
 	var (
@@ -38,7 +37,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("pi-go %s\n", version)
+		fmt.Println(version.Info())
 		os.Exit(0)
 	}
 
