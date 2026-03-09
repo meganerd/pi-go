@@ -21,9 +21,10 @@ import (
 // TUI manages the interactive conversation loop.
 type TUI struct {
 	agent   *agent.Loop
-	session session.Store
-	model   string
-	system  string
+	session   session.Store
+	model     string
+	system    string
+	streaming bool // true when agent loop has a stream callback
 
 	in  io.Reader
 	out io.Writer
@@ -60,6 +61,11 @@ func WithSystemPrompt(prompt string) Option {
 // WithSession sets the session store.
 func WithSession(s session.Store) Option {
 	return func(t *TUI) { t.session = s }
+}
+
+// WithStreaming marks the TUI as having streaming active (agent loop handles output).
+func WithStreaming() Option {
+	return func(t *TUI) { t.streaming = true }
 }
 
 // WithIO overrides stdin/stdout/stderr for testing.
@@ -174,20 +180,27 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 	}
 	req.Messages = append(req.Messages, userMsg)
 
-	// Show spinner while waiting
-	stop := t.startSpinner(ctx)
+	// Show spinner while waiting (skip if streaming — tokens will flow directly)
+	var stop func()
+	if !t.streaming {
+		stop = t.startSpinner(ctx)
+	}
 
 	resp, err := t.agent.Run(ctx, req)
-	stop()
+	if stop != nil {
+		stop()
+	}
 
 	if err != nil {
 		return err
 	}
 
-	// Print assistant response
-	if resp.Message.Content != "" {
+	// Print assistant response (skip if streaming — agent loop already printed tokens)
+	if !t.streaming && resp.Message.Content != "" {
 		fmt.Fprintln(t.out)
 		fmt.Fprintln(t.out, resp.Message.Content)
+	} else if t.streaming {
+		fmt.Fprintln(t.out) // newline after streamed content
 	}
 
 	// Print usage

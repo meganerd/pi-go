@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -263,5 +264,98 @@ func TestAgentLoop_Resume(t *testing.T) {
 	// Hello + Hi there! + Continue + Resumed successfully. = 4
 	if len(history) != 4 {
 		t.Fatalf("expected 4 messages after resume, got %d", len(history))
+	}
+}
+
+// mockStreamProvider simulates a streaming LLM.
+type mockStreamProvider struct {
+	mockProvider
+	streamCallCount int
+	eventSets       [][]provider.StreamEvent // one set per StreamChat call
+}
+
+func (m *mockStreamProvider) StreamChat(ctx context.Context, req *provider.ChatRequest) (<-chan provider.StreamEvent, error) {
+	idx := m.streamCallCount
+	m.streamCallCount++
+	if idx >= len(m.eventSets) {
+		// No more stream events — fall back to non-streaming
+		return nil, fmt.Errorf("no more stream events")
+	}
+	events := m.eventSets[idx]
+	ch := make(chan provider.StreamEvent, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestAgentLoop_Streaming(t *testing.T) {
+	sp := &mockStreamProvider{
+		eventSets: [][]provider.StreamEvent{
+			{
+				{Type: "text", Content: "Hello "},
+				{Type: "text", Content: "World"},
+				{Type: "done"},
+			},
+		},
+	}
+
+	var streamed string
+	loop := New(sp, nil).WithStreamCallback(func(text string) {
+		streamed += text
+	})
+
+	resp, err := loop.Run(context.Background(), &provider.ChatRequest{
+		Model:    "mock-model",
+		Messages: []message.Message{{Role: message.RoleUser, Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.Message.Content != "Hello World" {
+		t.Errorf("response content = %q, want 'Hello World'", resp.Message.Content)
+	}
+	if streamed != "Hello World" {
+		t.Errorf("streamed = %q, want 'Hello World'", streamed)
+	}
+}
+
+func TestAgentLoop_StreamingWithToolCall(t *testing.T) {
+	sp := &mockStreamProvider{
+		eventSets: [][]provider.StreamEvent{
+			{
+				{Type: "text", Content: "Let me read that."},
+				{Type: "tool_use_start", ToolID: "call_1", ToolName: "read"},
+				{Type: "tool_use_delta", Content: `{"path":"/tmp`},
+				{Type: "tool_use_delta", Content: `/test.txt"}`},
+				{Type: "tool_use_end"},
+				{Type: "done"},
+			},
+			// Second stream call returns error, forcing fallback to Chat()
+		},
+	}
+	// After tool execution, Chat fallback returns the final text response
+	sp.responses = []*provider.ChatResponse{
+		{Message: message.Message{Role: message.RoleAssistant, Content: "File says: hello"}},
+	}
+
+	tools := []tool.Tool{
+		&mockTool{name: "read", result: "hello"},
+	}
+
+	loop := New(sp, tools).WithStreamCallback(func(text string) {})
+
+	resp, err := loop.Run(context.Background(), &provider.ChatRequest{
+		Model:    "mock-model",
+		Messages: []message.Message{{Role: message.RoleUser, Content: "Read test.txt"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.Message.Content != "File says: hello" {
+		t.Errorf("final content = %q", resp.Message.Content)
 	}
 }

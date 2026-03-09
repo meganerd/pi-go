@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/meganerd/pi-go/internal/agent"
+	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/config"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/provider/anthropic"
@@ -69,16 +70,24 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: session unavailable: %v\n", err)
 	}
 
-	// Build agent loop with tool activity callback
-	loop := agent.New(prov, tools).WithToolCallback(func(name string, isResult bool, output string, isError bool) {
-		if !isResult {
-			fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", name)
-		} else if isError {
-			fmt.Fprintf(os.Stderr, "[%s error: %s]\n", name, truncate(output, 200))
-		} else {
-			fmt.Fprintf(os.Stderr, "[%s done: %d bytes]\n", name, len(output))
-		}
-	})
+	// Build compactor for context management
+	compactor := compact.New(prov, cfg.Model, cfg.MaxContextTokens, 0)
+
+	// Build agent loop with tool activity callback, compaction, and streaming
+	loop := agent.New(prov, tools).
+		WithCompactor(compactor).
+		WithToolCallback(func(name string, isResult bool, output string, isError bool) {
+			if !isResult {
+				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", name)
+			} else if isError {
+				fmt.Fprintf(os.Stderr, "[%s error: %s]\n", name, truncate(output, 200))
+			} else {
+				fmt.Fprintf(os.Stderr, "[%s done: %d bytes]\n", name, len(output))
+			}
+		}).
+		WithStreamCallback(func(text string) {
+			fmt.Print(text)
+		})
 	if sess != nil {
 		loop = loop.WithSession(sess)
 	}
@@ -93,6 +102,9 @@ func main() {
 	opts := []tui.Option{
 		tui.WithModel(cfg.Model),
 		tui.WithSystemPrompt(systemPrompt),
+	}
+	if provider.CanStream(prov) {
+		opts = append(opts, tui.WithStreaming())
 	}
 	if sess != nil {
 		opts = append(opts, tui.WithSession(sess))

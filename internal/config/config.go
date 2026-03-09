@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	DefaultModel      = "claude-sonnet-4-20250514"
-	DefaultProvider   = "anthropic"
-	DefaultMaxTokens  = 8192
+	DefaultModel            = "claude-sonnet-4-20250514"
+	DefaultProvider         = "anthropic"
+	DefaultMaxTokens        = 8192
+	DefaultMaxContextTokens = 100000
 )
 
 // Config holds the full pi-go configuration, resolved from multiple layers.
@@ -29,6 +30,9 @@ type Config struct {
 
 	// MaxTokens is the max output tokens per LLM call.
 	MaxTokens int `json:"max_tokens,omitempty"`
+
+	// MaxContextTokens is the token threshold for context compaction.
+	MaxContextTokens int `json:"max_context_tokens,omitempty"`
 
 	// Tools lists the enabled tool names. Empty means all.
 	Tools []string `json:"tools,omitempty"`
@@ -87,6 +91,9 @@ func Load() *Config {
 	}
 	if cfg.MaxTokens == 0 {
 		cfg.MaxTokens = DefaultMaxTokens
+	}
+	if cfg.MaxContextTokens == 0 {
+		cfg.MaxContextTokens = DefaultMaxContextTokens
 	}
 
 	return cfg
