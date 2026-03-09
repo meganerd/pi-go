@@ -121,6 +121,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Loaded %d project context file(s)\n", len(pctx.Files))
 		}
 	}
+	if gitCtx := projctx.GitContext(cwd); gitCtx != "" {
+		systemPrompt += gitCtx
+	}
 
 	// Run TUI
 	opts := []tui.Option{
