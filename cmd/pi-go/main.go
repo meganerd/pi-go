@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/meganerd/pi-go/internal/agent"
 	"github.com/meganerd/pi-go/internal/compact"
@@ -81,9 +83,16 @@ func main() {
 	// Build compactor for context management
 	compactor := compact.New(prov, cfg.Model, cfg.MaxContextTokens, 0)
 
-	// Build agent loop with tool activity callback, compaction, and streaming
+	// Build agent loop with tool activity callback, confirmation, compaction, and streaming
 	loop := agent.New(prov, tools).
 		WithCompactor(compactor).
+		WithConfirmCallback(func(name string, input json.RawMessage) bool {
+			fmt.Fprintf(os.Stderr, "Allow %s? [Y/n] ", name)
+			var answer string
+			fmt.Scanln(&answer)
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			return answer == "" || answer == "y" || answer == "yes"
+		}).
 		WithToolCallback(func(name string, isResult bool, output string, isError bool) {
 			if !isResult {
 				fmt.Fprintf(os.Stderr, "\n[tool: %s]\n", name)

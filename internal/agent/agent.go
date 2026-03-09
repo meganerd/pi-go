@@ -30,6 +30,7 @@ type Loop struct {
 	retryConfig provider.RetryConfig
 	onToolCall  ToolCallback
 	onStream    StreamCallback
+	onConfirm   ConfirmCallback
 }
 
 // New creates a new agent loop with the given provider and tools.
@@ -66,6 +67,13 @@ func (l *Loop) WithToolCallback(cb ToolCallback) *Loop {
 // WithStreamCallback sets a callback for streaming text tokens.
 func (l *Loop) WithStreamCallback(cb StreamCallback) *Loop {
 	l.onStream = cb
+	return l
+}
+
+// WithConfirmCallback sets a callback for confirming tool execution.
+// Read-only tools (read, grep, find, ls) are auto-approved.
+func (l *Loop) WithConfirmCallback(cb ConfirmCallback) *Loop {
+	l.onConfirm = cb
 	return l
 }
 
@@ -113,6 +121,28 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 			if l.onToolCall != nil {
 				l.onToolCall(tc.Name, false, "", false)
 			}
+
+			// Check confirmation for non-read-only tools
+			if l.onConfirm != nil && !IsReadOnly(tc.Name) {
+				if !l.onConfirm(tc.Name, tc.Input) {
+					declinedMsg := "Tool execution declined by user"
+					if l.onToolCall != nil {
+						l.onToolCall(tc.Name, true, declinedMsg, true)
+					}
+					toolMsg := message.Message{
+						Role: message.RoleTool,
+						ToolResult: &message.ToolResultMsg{
+							ToolCallID: tc.ID,
+							Content:    declinedMsg,
+							IsError:    true,
+						},
+					}
+					l.persist(&toolMsg)
+					req.Messages = append(req.Messages, toolMsg)
+					continue
+				}
+			}
+
 			result, err := l.executeTool(ctx, tc)
 			if err != nil {
 				errContent := fmt.Sprintf("Error: %v", err)
