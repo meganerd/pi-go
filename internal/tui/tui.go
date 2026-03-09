@@ -20,10 +20,11 @@ import (
 
 // TUI manages the interactive conversation loop.
 type TUI struct {
-	agent   *agent.Loop
+	agent     *agent.Loop
 	session   session.Store
 	model     string
 	system    string
+	maxTokens int  // max output tokens per LLM call
 	streaming bool // true when agent loop has a stream callback
 
 	in  io.Reader
@@ -61,6 +62,11 @@ func WithSystemPrompt(prompt string) Option {
 // WithSession sets the session store.
 func WithSession(s session.Store) Option {
 	return func(t *TUI) { t.session = s }
+}
+
+// WithMaxTokens sets the maximum output tokens per LLM call.
+func WithMaxTokens(n int) Option {
+	return func(t *TUI) { t.maxTokens = n }
 }
 
 // WithStreaming marks the TUI as having streaming active (agent loop handles output).
@@ -171,6 +177,7 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 	req := &provider.ChatRequest{
 		Model:        t.model,
 		SystemPrompt: t.system,
+		MaxTokens:    t.maxTokens,
 	}
 	if t.session != nil {
 		if err := t.agent.Resume(req); err != nil {

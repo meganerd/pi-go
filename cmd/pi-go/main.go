@@ -109,6 +109,7 @@ func main() {
 	opts := []tui.Option{
 		tui.WithModel(cfg.Model),
 		tui.WithSystemPrompt(systemPrompt),
+		tui.WithMaxTokens(cfg.MaxTokens),
 	}
 	if provider.CanStream(prov) {
 		opts = append(opts, tui.WithStreaming())
