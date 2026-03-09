@@ -20,6 +20,20 @@ type Provider interface {
 	Models() []Model
 }
 
+// StreamProvider is an optional interface for providers that support streaming.
+// Use CanStream to check if a provider supports streaming.
+type StreamProvider interface {
+	Provider
+	// StreamChat sends a conversation and returns a channel of streamed events.
+	StreamChat(ctx context.Context, req *ChatRequest) (<-chan StreamEvent, error)
+}
+
+// CanStream returns true if the provider supports streaming.
+func CanStream(p Provider) bool {
+	_, ok := p.(StreamProvider)
+	return ok
+}
+
 // ChatRequest holds the input for an LLM call.
 type ChatRequest struct {
 	Model        string            `json:"model"`

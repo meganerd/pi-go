@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/message"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/session"
@@ -15,12 +17,17 @@ import (
 // ToolCallback is called when a tool is invoked or returns a result.
 type ToolCallback func(toolName string, isResult bool, output string, isError bool)
 
+// StreamCallback is called for each streaming text token.
+type StreamCallback func(text string)
+
 // Loop orchestrates the conversation between the LLM and tools.
 type Loop struct {
 	provider   provider.Provider
 	tools      map[string]tool.Tool
 	session    session.Store
+	compactor  *compact.Compactor
 	onToolCall ToolCallback
+	onStream   StreamCallback
 }
 
 // New creates a new agent loop with the given provider and tools.
@@ -41,9 +48,21 @@ func (l *Loop) WithSession(s session.Store) *Loop {
 	return l
 }
 
+// WithCompactor sets a context compactor for long conversations.
+func (l *Loop) WithCompactor(c *compact.Compactor) *Loop {
+	l.compactor = c
+	return l
+}
+
 // WithToolCallback sets a callback for tool invocations and results.
 func (l *Loop) WithToolCallback(cb ToolCallback) *Loop {
 	l.onToolCall = cb
+	return l
+}
+
+// WithStreamCallback sets a callback for streaming text tokens.
+func (l *Loop) WithStreamCallback(cb StreamCallback) *Loop {
+	l.onStream = cb
 	return l
 }
 
@@ -62,7 +81,16 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 
 	const maxIterations = 20 // safety limit
 	for i := 0; i < maxIterations; i++ {
-		resp, err := l.provider.Chat(ctx, req)
+		// Compact context if needed
+		if l.compactor != nil {
+			compacted, err := l.compactor.Compact(ctx, req.Messages)
+			if err == nil {
+				req.Messages = compacted
+			}
+		}
+
+		// Try streaming if available, fall back to non-streaming
+		resp, err := l.chat(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("provider chat (iteration %d): %w", i, err)
 		}
@@ -88,7 +116,6 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 				if l.onToolCall != nil {
 					l.onToolCall(tc.Name, true, errContent, true)
 				}
-				// Send error back to LLM
 				toolMsg := message.Message{
 					Role: message.RoleTool,
 					ToolResult: &message.ToolResultMsg{
@@ -118,6 +145,92 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 	}
 
 	return nil, fmt.Errorf("agent loop exceeded %d iterations", maxIterations)
+}
+
+// chat attempts streaming if available, otherwise falls back to non-streaming.
+func (l *Loop) chat(ctx context.Context, req *provider.ChatRequest) (*provider.ChatResponse, error) {
+	sp, ok := l.provider.(provider.StreamProvider)
+	if !ok || l.onStream == nil {
+		return l.provider.Chat(ctx, req)
+	}
+
+	ch, err := sp.StreamChat(ctx, req)
+	if err != nil {
+		// Fall back to non-streaming on error
+		return l.provider.Chat(ctx, req)
+	}
+
+	return l.consumeStream(ch)
+}
+
+// consumeStream reads all events from a stream and assembles a ChatResponse.
+func (l *Loop) consumeStream(ch <-chan provider.StreamEvent) (*provider.ChatResponse, error) {
+	var textBuilder strings.Builder
+	var toolCalls []message.ToolCall
+	var currentTool *message.ToolCall
+	var toolInputBuilder strings.Builder
+
+	for event := range ch {
+		switch event.Type {
+		case "text":
+			textBuilder.WriteString(event.Content)
+			if l.onStream != nil {
+				l.onStream(event.Content)
+			}
+
+		case "tool_use_start":
+			// Finish previous tool if any
+			if currentTool != nil {
+				currentTool.Input = json.RawMessage(toolInputBuilder.String())
+				toolCalls = append(toolCalls, *currentTool)
+				toolInputBuilder.Reset()
+			}
+			currentTool = &message.ToolCall{
+				ID:   event.ToolID,
+				Name: event.ToolName,
+			}
+
+		case "tool_use_delta":
+			toolInputBuilder.WriteString(event.Content)
+
+		case "tool_use_end":
+			if currentTool != nil {
+				input := toolInputBuilder.String()
+				if input == "" {
+					input = "{}"
+				}
+				currentTool.Input = json.RawMessage(input)
+				toolCalls = append(toolCalls, *currentTool)
+				currentTool = nil
+				toolInputBuilder.Reset()
+			}
+
+		case "done":
+			// Finish any pending tool
+			if currentTool != nil {
+				input := toolInputBuilder.String()
+				if input == "" {
+					input = "{}"
+				}
+				currentTool.Input = json.RawMessage(input)
+				toolCalls = append(toolCalls, *currentTool)
+			}
+
+		case "error":
+			if event.Error != nil {
+				return nil, event.Error
+			}
+			return nil, fmt.Errorf("stream error: %s", event.Content)
+		}
+	}
+
+	msg := message.Message{
+		Role:      message.RoleAssistant,
+		Content:   textBuilder.String(),
+		ToolCalls: toolCalls,
+	}
+
+	return &provider.ChatResponse{Message: msg}, nil
 }
 
 // Resume loads persisted messages from the session store into a ChatRequest.
