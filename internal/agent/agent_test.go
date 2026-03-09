@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/meganerd/pi-go/internal/message"
 	"github.com/meganerd/pi-go/internal/provider"
+	"github.com/meganerd/pi-go/internal/session"
 	"github.com/meganerd/pi-go/internal/tool"
 )
 
@@ -135,5 +137,131 @@ func TestAgentLoop_NoToolCalls(t *testing.T) {
 	}
 	if resp.Message.Content != "Hello! How can I help?" {
 		t.Errorf("unexpected content: %q", resp.Message.Content)
+	}
+}
+
+func TestAgentLoop_SessionPersistence(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "session.jsonl")
+
+	store, err := session.NewJSONLStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Persist the user message before running
+	userMsg := message.Message{Role: message.RoleUser, Content: "What is 2+2?"}
+	store.Append(&userMsg)
+
+	mp := &mockProvider{
+		responses: []*provider.ChatResponse{
+			{
+				Message: message.Message{
+					Role:    message.RoleAssistant,
+					Content: "2+2 is 4.",
+				},
+			},
+		},
+	}
+
+	loop := New(mp, nil).WithSession(store)
+	resp, err := loop.Run(context.Background(), &provider.ChatRequest{
+		Model: "mock-model",
+		Messages: []message.Message{
+			userMsg,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Message.Content != "2+2 is 4." {
+		t.Errorf("unexpected: %q", resp.Message.Content)
+	}
+	store.Close()
+
+	// Reopen and verify messages survived
+	store2, err := session.NewJSONLStore(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store2.Close()
+
+	history, err := store2.Messages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// user + assistant = 2 messages
+	if len(history) != 2 {
+		t.Fatalf("expected 2 persisted messages, got %d", len(history))
+	}
+	if history[0].Role != message.RoleUser {
+		t.Errorf("msg[0] role: got %q, want %q", history[0].Role, message.RoleUser)
+	}
+	if history[1].Role != message.RoleAssistant {
+		t.Errorf("msg[1] role: got %q, want %q", history[1].Role, message.RoleAssistant)
+	}
+	if history[1].Content != "2+2 is 4." {
+		t.Errorf("msg[1] content: got %q, want %q", history[1].Content, "2+2 is 4.")
+	}
+}
+
+func TestAgentLoop_Resume(t *testing.T) {
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "session.jsonl")
+
+	// First session: write two messages
+	store1, _ := session.NewJSONLStore(storePath)
+	msg1 := message.Message{Role: message.RoleUser, Content: "Hello"}
+	store1.Append(&msg1)
+	msg2 := message.Message{Role: message.RoleAssistant, Content: "Hi there!"}
+	store1.Append(&msg2)
+	store1.Close()
+
+	// Reopen and resume
+	store2, _ := session.NewJSONLStore(storePath)
+
+	mp := &mockProvider{
+		responses: []*provider.ChatResponse{
+			{
+				Message: message.Message{
+					Role:    message.RoleAssistant,
+					Content: "Resumed successfully.",
+				},
+			},
+		},
+	}
+
+	loop := New(mp, nil).WithSession(store2)
+	req := &provider.ChatRequest{Model: "mock-model"}
+
+	// Resume loads persisted messages
+	if err := loop.Resume(req); err != nil {
+		t.Fatal(err)
+	}
+	if len(req.Messages) != 2 {
+		t.Fatalf("expected 2 resumed messages, got %d", len(req.Messages))
+	}
+
+	// Add new user message and run
+	newMsg := message.Message{Role: message.RoleUser, Content: "Continue"}
+	store2.Append(&newMsg)
+	req.Messages = append(req.Messages, newMsg)
+
+	resp, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Message.Content != "Resumed successfully." {
+		t.Errorf("unexpected: %q", resp.Message.Content)
+	}
+	store2.Close()
+
+	// Verify full chain persisted
+	store3, _ := session.NewJSONLStore(storePath)
+	defer store3.Close()
+	history, _ := store3.Messages()
+	// Hello + Hi there! + Continue + Resumed successfully. = 4
+	if len(history) != 4 {
+		t.Fatalf("expected 4 messages after resume, got %d", len(history))
 	}
 }
