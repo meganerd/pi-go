@@ -183,6 +183,9 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	case input == "/compact":
 		t.handleCompact()
 		return true, nil
+	case input == "/sessions":
+		t.printSessionInfo()
+		return true, nil
 	default:
 		if strings.HasPrefix(input, "/") {
 			fmt.Fprintf(t.out, "Unknown command: %s\n", input)
