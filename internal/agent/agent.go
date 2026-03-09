@@ -23,12 +23,13 @@ type StreamCallback func(text string)
 
 // Loop orchestrates the conversation between the LLM and tools.
 type Loop struct {
-	provider   provider.Provider
-	tools      map[string]tool.Tool
-	session    session.Store
-	compactor  *compact.Compactor
-	onToolCall ToolCallback
-	onStream   StreamCallback
+	provider    provider.Provider
+	tools       map[string]tool.Tool
+	session     session.Store
+	compactor   *compact.Compactor
+	retryConfig provider.RetryConfig
+	onToolCall  ToolCallback
+	onStream    StreamCallback
 }
 
 // New creates a new agent loop with the given provider and tools.
@@ -38,8 +39,9 @@ func New(p provider.Provider, tools []tool.Tool) *Loop {
 		toolMap[t.Name()] = t
 	}
 	return &Loop{
-		provider: p,
-		tools:    toolMap,
+		provider:    p,
+		tools:       toolMap,
+		retryConfig: provider.DefaultRetryConfig(),
 	}
 }
 
@@ -148,17 +150,17 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 	return nil, fmt.Errorf("agent loop exceeded %d iterations", maxIterations)
 }
 
-// chat attempts streaming if available, otherwise falls back to non-streaming.
+// chat attempts streaming if available, otherwise falls back to non-streaming with retry.
 func (l *Loop) chat(ctx context.Context, req *provider.ChatRequest) (*provider.ChatResponse, error) {
 	sp, ok := l.provider.(provider.StreamProvider)
 	if !ok || l.onStream == nil {
-		return l.provider.Chat(ctx, req)
+		return provider.RetryChat(ctx, l.provider, req, l.retryConfig)
 	}
 
 	ch, err := sp.StreamChat(ctx, req)
 	if err != nil {
-		// Fall back to non-streaming on error
-		return l.provider.Chat(ctx, req)
+		// Fall back to non-streaming with retry on error
+		return provider.RetryChat(ctx, l.provider, req, l.retryConfig)
 	}
 
 	return l.consumeStream(ch)
