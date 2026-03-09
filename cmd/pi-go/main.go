@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/meganerd/pi-go/internal/agent"
 	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/config"
+	"github.com/meganerd/pi-go/internal/message"
 	projctx "github.com/meganerd/pi-go/internal/context"
 	"github.com/meganerd/pi-go/internal/et"
 	"github.com/meganerd/pi-go/internal/provider"
@@ -32,6 +34,7 @@ func main() {
 		providerArg  string
 		sessionDir   string
 		resume       bool
+		prompt       string
 	)
 
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
@@ -40,6 +43,7 @@ func main() {
 	flag.StringVar(&providerArg, "provider", "", "LLM provider (anthropic, openai, openrouter)")
 	flag.StringVar(&sessionDir, "session-dir", "", "Session storage directory")
 	flag.BoolVar(&resume, "resume", false, "Resume last session for current directory")
+	flag.StringVar(&prompt, "prompt", "", "Send a single prompt and exit (use - for stdin)")
 	flag.Parse()
 
 	if showVersion {
@@ -133,6 +137,12 @@ func main() {
 		systemPrompt += gitCtx
 	}
 
+	// Non-interactive mode: --prompt flag
+	if prompt != "" {
+		runPrompt(prompt, loop, cfg, systemPrompt, sess)
+		return
+	}
+
 	// Run TUI
 	opts := []tui.Option{
 		tui.WithModel(cfg.Model),
@@ -152,6 +162,51 @@ func main() {
 			sess.Close()
 		}
 		os.Exit(0) // /exit returns io.EOF — clean exit
+	}
+
+	if sess != nil {
+		sess.Close()
+	}
+}
+
+func runPrompt(prompt string, loop *agent.Loop, cfg *config.Config, systemPrompt string, sess session.Store) {
+	// Read from stdin if prompt is "-"
+	if prompt == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+			os.Exit(1)
+		}
+		prompt = strings.TrimSpace(string(data))
+		if prompt == "" {
+			fmt.Fprintln(os.Stderr, "Error: empty input from stdin")
+			os.Exit(1)
+		}
+	}
+
+	req := &provider.ChatRequest{
+		Model:        cfg.Model,
+		SystemPrompt: systemPrompt,
+		MaxTokens:    cfg.MaxTokens,
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: prompt},
+		},
+	}
+
+	resp, err := loop.Run(context.Background(), req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if sess != nil {
+			sess.Close()
+		}
+		os.Exit(1)
+	}
+
+	// Print response — skip if streaming already printed tokens
+	if !provider.CanStream(loop.Provider()) && resp.Message.Content != "" {
+		fmt.Println(resp.Message.Content)
+	} else if provider.CanStream(loop.Provider()) {
+		fmt.Println() // trailing newline after streamed content
 	}
 
 	if sess != nil {
