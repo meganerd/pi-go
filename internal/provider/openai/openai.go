@@ -253,6 +253,12 @@ func (o *OpenAI) parseStreamChunk(data string) []provider.StreamEvent {
 				})
 			}
 		}
+		// Emit tool_use_end when OpenAI signals tool calling is complete.
+		// Without this, tool calls are only finalized on [DONE] — a
+		// disconnect before that loses in-flight tool calls.
+		if choice.FinishReason != nil && *choice.FinishReason == "tool_calls" {
+			events = append(events, provider.StreamEvent{Type: "tool_use_end"})
+		}
 	}
 	return events
 }
