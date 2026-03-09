@@ -53,8 +53,9 @@ type ToolDef struct {
 
 // ChatResponse holds the complete response from an LLM call.
 type ChatResponse struct {
-	Message message.Message `json:"message"`
-	Usage   Usage           `json:"usage"`
+	Message    message.Message `json:"message"`
+	Usage      Usage           `json:"usage"`
+	StopReason string          `json:"stop_reason,omitempty"` // e.g. "end_turn", "tool_use", "max_tokens"
 }
 
 // Usage tracks token consumption.

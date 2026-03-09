@@ -176,7 +176,9 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 		if err := t.agent.Resume(req); err != nil {
 			fmt.Fprintf(t.err, "Warning: could not resume session: %v\n", err)
 		}
-		_ = t.session.Append(&userMsg)
+		if err := t.session.Append(&userMsg); err != nil {
+			fmt.Fprintf(t.err, "Warning: failed to persist message: %v\n", err)
+		}
 	}
 	req.Messages = append(req.Messages, userMsg)
 
