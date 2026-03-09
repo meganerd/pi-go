@@ -16,12 +16,14 @@ import (
 	"github.com/meganerd/pi-go/internal/message"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/session"
+	"github.com/meganerd/pi-go/internal/usage"
 )
 
 // TUI manages the interactive conversation loop.
 type TUI struct {
 	agent     *agent.Loop
 	session   session.Store
+	tracker   *usage.Tracker
 	model     string
 	system    string
 	maxTokens int  // max output tokens per LLM call
@@ -43,6 +45,7 @@ func New(agentLoop *agent.Loop, opts ...Option) *TUI {
 	for _, opt := range opts {
 		opt(t)
 	}
+	t.tracker = usage.New(t.model)
 	return t
 }
 
@@ -98,6 +101,7 @@ func (t *TUI) Run(ctx context.Context) error {
 
 		if !scanner.Scan() {
 			// EOF (Ctrl+D)
+			t.printUsageStats()
 			fmt.Fprintln(t.out, "\nGoodbye!")
 			return nil
 		}
@@ -134,16 +138,29 @@ func (t *TUI) printWelcome() {
 	if t.model != "" {
 		fmt.Fprintf(t.out, "Model: %s\n", t.model)
 	}
-	fmt.Fprintln(t.out, "Type /exit to quit, Ctrl+D for EOF")
+	fmt.Fprintln(t.out, "Commands: /exit, /session, /usage")
+}
+
+func (t *TUI) printUsageStats() {
+	stats := t.tracker.Stats()
+	if stats.Calls == 0 {
+		fmt.Fprintln(t.out, "No usage yet")
+		return
+	}
+	fmt.Fprintf(t.out, "Usage: %s\n", stats)
 }
 
 func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	switch {
 	case input == "/exit":
+		t.printUsageStats()
 		fmt.Fprintln(t.out, "Goodbye!")
 		return true, io.EOF
 	case input == "/session":
 		t.printSessionInfo()
+		return true, nil
+	case input == "/usage":
+		t.printUsageStats()
 		return true, nil
 	default:
 		if strings.HasPrefix(input, "/") {
@@ -212,8 +229,9 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 		fmt.Fprintln(t.out) // newline after streamed content
 	}
 
-	// Print usage
+	// Track and print usage
 	if resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0 {
+		t.tracker.Add(resp.Usage.InputTokens, resp.Usage.OutputTokens)
 		fmt.Fprintf(t.err, "[%d in / %d out tokens]\n", resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}
 
