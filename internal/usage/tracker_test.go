@@ -92,3 +92,32 @@ func TestStats_String_WithoutPricing(t *testing.T) {
 		t.Errorf("should NOT contain cost estimate: %s", s)
 	}
 }
+
+func TestTracker_SetBudget(t *testing.T) {
+	tr := New("gpt-4o")
+	tr.SetBudget(100000)
+	tr.Add(25000, 5000)
+
+	stats := tr.Stats()
+	if stats.Budget != 100000 {
+		t.Errorf("budget = %d, want 100000", stats.Budget)
+	}
+
+	s := stats.String()
+	if !strings.Contains(s, "budget:") {
+		t.Errorf("should contain budget display: %s", s)
+	}
+	if !strings.Contains(s, "30%") {
+		t.Errorf("should show ~30%% used: %s", s)
+	}
+}
+
+func TestTracker_NoBudget(t *testing.T) {
+	tr := New("gpt-4o")
+	tr.Add(500, 250)
+
+	s := tr.Stats().String()
+	if strings.Contains(s, "budget:") {
+		t.Errorf("should NOT show budget when unset: %s", s)
+	}
+}

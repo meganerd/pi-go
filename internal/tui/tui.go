@@ -27,9 +27,10 @@ type TUI struct {
 	tracker   *usage.Tracker
 	model     string
 	system    string
-	maxTokens int  // max output tokens per LLM call
-	streaming bool // true when agent loop has a stream callback
-	cleared   bool // set by /clear to skip session history on next message
+	maxTokens        int  // max output tokens per LLM call
+	maxContextTokens int  // context budget for token tracking
+	streaming        bool // true when agent loop has a stream callback
+	cleared          bool // set by /clear to skip session history on next message
 
 	in  io.Reader
 	out io.Writer
@@ -48,6 +49,9 @@ func New(agentLoop *agent.Loop, opts ...Option) *TUI {
 		opt(t)
 	}
 	t.tracker = usage.New(t.model)
+	if t.maxContextTokens > 0 {
+		t.tracker.SetBudget(t.maxContextTokens)
+	}
 	return t
 }
 
@@ -72,6 +76,11 @@ func WithSession(s session.Store) Option {
 // WithMaxTokens sets the maximum output tokens per LLM call.
 func WithMaxTokens(n int) Option {
 	return func(t *TUI) { t.maxTokens = n }
+}
+
+// WithMaxContextTokens sets the context token budget for usage display.
+func WithMaxContextTokens(n int) Option {
+	return func(t *TUI) { t.maxContextTokens = n }
 }
 
 // WithStreaming marks the TUI as having streaming active (agent loop handles output).
