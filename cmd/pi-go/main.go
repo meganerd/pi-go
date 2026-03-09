@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/meganerd/pi-go/internal/agent"
@@ -25,14 +26,16 @@ import (
 
 func main() {
 	var (
-		showVersion bool
-		model       string
-		providerArg string
-		sessionDir  string
-		resume      bool
+		showVersion  bool
+		listSessions bool
+		model        string
+		providerArg  string
+		sessionDir   string
+		resume       bool
 	)
 
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
+	flag.BoolVar(&listSessions, "list-sessions", false, "List recent sessions and exit")
 	flag.StringVar(&model, "model", "", "LLM model to use")
 	flag.StringVar(&providerArg, "provider", "", "LLM provider (anthropic, openai, openrouter)")
 	flag.StringVar(&sessionDir, "session-dir", "", "Session storage directory")
@@ -41,6 +44,11 @@ func main() {
 
 	if showVersion {
 		fmt.Println(version.Info())
+		os.Exit(0)
+	}
+
+	if listSessions {
+		listAllSessions(sessionDir)
 		os.Exit(0)
 	}
 
@@ -241,6 +249,36 @@ func initEtDelegator(cfg *config.Config) *et.CLIDelegator {
 		outputDir = cfg.Et.OutputDir
 	}
 	return et.NewCLIDelegator("", configPath, outputDir)
+}
+
+func listAllSessions(sessionDir string) {
+	if sessionDir == "" {
+		home, _ := os.UserHomeDir()
+		sessionDir = filepath.Join(home, ".config", "pi-go", "sessions")
+	}
+	mgr := session.NewManager(sessionDir)
+	sessions, err := mgr.List()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
+	if len(sessions) == 0 {
+		fmt.Println("No sessions found")
+		return
+	}
+	fmt.Printf("%-20s %-40s %s\n", "ID", "Path", "Created")
+	fmt.Printf("%-20s %-40s %s\n", strings.Repeat("-", 20), strings.Repeat("-", 40), strings.Repeat("-", 20))
+	for _, s := range sessions {
+		path := s.Path
+		if len(path) > 40 {
+			path = "..." + path[len(path)-37:]
+		}
+		created := s.CreatedAt
+		if len(created) > 19 {
+			created = created[:19]
+		}
+		fmt.Printf("%-20s %-40s %s\n", s.ID, path, created)
+	}
 }
 
 func truncate(s string, maxLen int) string {
