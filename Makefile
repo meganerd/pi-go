@@ -26,3 +26,6 @@ install:
 cover:
 	go test -race -coverprofile=coverage.txt ./...
 	go tool cover -html=coverage.txt -o coverage.html
+
+integration:
+	go test -tags integration -v -run TestIntegration ./...
