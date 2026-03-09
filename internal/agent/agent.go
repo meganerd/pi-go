@@ -12,11 +12,15 @@ import (
 	"github.com/meganerd/pi-go/internal/tool"
 )
 
+// ToolCallback is called when a tool is invoked or returns a result.
+type ToolCallback func(toolName string, isResult bool, output string, isError bool)
+
 // Loop orchestrates the conversation between the LLM and tools.
 type Loop struct {
-	provider provider.Provider
-	tools    map[string]tool.Tool
-	session  session.Store
+	provider   provider.Provider
+	tools      map[string]tool.Tool
+	session    session.Store
+	onToolCall ToolCallback
 }
 
 // New creates a new agent loop with the given provider and tools.
@@ -34,6 +38,12 @@ func New(p provider.Provider, tools []tool.Tool) *Loop {
 // WithSession sets a session store for persisting messages.
 func (l *Loop) WithSession(s session.Store) *Loop {
 	l.session = s
+	return l
+}
+
+// WithToolCallback sets a callback for tool invocations and results.
+func (l *Loop) WithToolCallback(cb ToolCallback) *Loop {
+	l.onToolCall = cb
 	return l
 }
 
@@ -69,20 +79,30 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 
 		// Execute each tool call and append results
 		for _, tc := range resp.Message.ToolCalls {
+			if l.onToolCall != nil {
+				l.onToolCall(tc.Name, false, "", false)
+			}
 			result, err := l.executeTool(ctx, tc)
 			if err != nil {
+				errContent := fmt.Sprintf("Error: %v", err)
+				if l.onToolCall != nil {
+					l.onToolCall(tc.Name, true, errContent, true)
+				}
 				// Send error back to LLM
 				toolMsg := message.Message{
 					Role: message.RoleTool,
 					ToolResult: &message.ToolResultMsg{
 						ToolCallID: tc.ID,
-						Content:    fmt.Sprintf("Error: %v", err),
+						Content:    errContent,
 						IsError:    true,
 					},
 				}
 				l.persist(&toolMsg)
 				req.Messages = append(req.Messages, toolMsg)
 				continue
+			}
+			if l.onToolCall != nil {
+				l.onToolCall(tc.Name, true, result.Output, false)
 			}
 
 			toolMsg := message.Message{
