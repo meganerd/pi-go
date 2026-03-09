@@ -116,6 +116,64 @@ func (c *Compactor) Compact(ctx context.Context, msgs []message.Message) ([]mess
 	return compacted, nil
 }
 
+// ForceCompact compacts messages regardless of the token threshold.
+// Returns the compacted messages, or original if there aren't enough to compact.
+func (c *Compactor) ForceCompact(ctx context.Context, msgs []message.Message) ([]message.Message, int, int, error) {
+	beforeTokens := token.EstimateMessages(msgs)
+
+	splitIdx := len(msgs) - c.keepCount
+	if splitIdx <= 0 {
+		return msgs, beforeTokens, beforeTokens, nil
+	}
+
+	old := msgs[:splitIdx]
+	recent := msgs[splitIdx:]
+
+	summaryContent := "Conversation history to summarize:\n\n"
+	for _, msg := range old {
+		summaryContent += fmt.Sprintf("[%s]: %s\n", msg.Role, msg.Content)
+		for _, tc := range msg.ToolCalls {
+			summaryContent += fmt.Sprintf("  [tool_call: %s(%s)]\n", tc.Name, string(tc.Input))
+		}
+		if msg.ToolResult != nil {
+			prefix := "result"
+			if msg.ToolResult.IsError {
+				prefix = "error"
+			}
+			summaryContent += fmt.Sprintf("  [tool_%s: %s]\n", prefix, truncate(msg.ToolResult.Content, 200))
+		}
+	}
+
+	req := &provider.ChatRequest{
+		Model:        c.model,
+		SystemPrompt: compactionPrompt,
+		Messages: []message.Message{
+			{Role: message.RoleUser, Content: summaryContent},
+		},
+		MaxTokens: 2048,
+	}
+
+	resp, err := c.provider.Chat(ctx, req)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("compaction summary: %w", err)
+	}
+
+	compacted := make([]message.Message, 0, 1+len(recent))
+	compacted = append(compacted, message.Message{
+		Role:    message.RoleUser,
+		Content: "[Previous conversation summary]\n\n" + resp.Message.Content,
+	})
+	compacted = append(compacted, recent...)
+
+	afterTokens := token.EstimateMessages(compacted)
+	return compacted, beforeTokens, afterTokens, nil
+}
+
+// EstimateTokens returns the estimated token count for a set of messages.
+func (c *Compactor) EstimateTokens(msgs []message.Message) int {
+	return token.EstimateMessages(msgs)
+}
+
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
