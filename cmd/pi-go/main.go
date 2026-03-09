@@ -156,6 +156,7 @@ func main() {
 		tui.WithModel(cfg.Model),
 		tui.WithSystemPrompt(systemPrompt),
 		tui.WithMaxTokens(cfg.MaxTokens),
+		tui.WithMaxContextTokens(cfg.MaxContextTokens),
 	}
 	if provider.CanStream(prov) {
 		opts = append(opts, tui.WithStreaming())

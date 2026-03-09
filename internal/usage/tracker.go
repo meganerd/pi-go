@@ -32,6 +32,7 @@ type Tracker struct {
 	totalInput  int
 	totalOutput int
 	calls       int
+	budget      int // max context tokens (0 = no budget tracking)
 }
 
 // New creates a usage tracker for the given model.
@@ -45,6 +46,13 @@ func New(model string) *Tracker {
 		model:   model,
 		pricing: pricing,
 	}
+}
+
+// SetBudget sets the context token budget for remaining-capacity display.
+func (t *Tracker) SetBudget(maxContextTokens int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.budget = maxContextTokens
 }
 
 // Add records a single LLM call's token consumption.
@@ -61,13 +69,14 @@ func (t *Tracker) Stats() Stats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return Stats{
-		Model:       t.model,
-		InputTokens: t.totalInput,
+		Model:        t.model,
+		InputTokens:  t.totalInput,
 		OutputTokens: t.totalOutput,
-		TotalTokens: t.totalInput + t.totalOutput,
-		Calls:       t.calls,
-		EstCost:     t.estimateCost(),
-		HasPricing:  t.pricing.InputPer1K > 0 || t.pricing.OutputPer1K > 0,
+		TotalTokens:  t.totalInput + t.totalOutput,
+		Calls:        t.calls,
+		EstCost:      t.estimateCost(),
+		HasPricing:   t.pricing.InputPer1K > 0 || t.pricing.OutputPer1K > 0,
+		Budget:       t.budget,
 	}
 }
 
@@ -86,6 +95,7 @@ type Stats struct {
 	Calls        int
 	EstCost      float64
 	HasPricing   bool
+	Budget       int // max context tokens (0 = no budget)
 }
 
 // String returns a human-readable summary.
@@ -93,7 +103,16 @@ func (s Stats) String() string {
 	base := fmt.Sprintf("%d tokens (%d in / %d out) across %d calls",
 		s.TotalTokens, s.InputTokens, s.OutputTokens, s.Calls)
 	if s.HasPricing {
-		return fmt.Sprintf("%s — est. $%.4f", base, s.EstCost)
+		base = fmt.Sprintf("%s — est. $%.4f", base, s.EstCost)
+	}
+	if s.Budget > 0 {
+		remaining := s.Budget - s.TotalTokens
+		pct := float64(s.TotalTokens) / float64(s.Budget) * 100
+		if remaining < 0 {
+			remaining = 0
+		}
+		base = fmt.Sprintf("%s | budget: %d/%d (%.0f%% used)", base, s.TotalTokens, s.Budget, pct)
+		_ = remaining // used for display logic above
 	}
 	return base
 }
