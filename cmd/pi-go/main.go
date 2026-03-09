@@ -10,6 +10,7 @@ import (
 	"github.com/meganerd/pi-go/internal/agent"
 	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/config"
+	projctx "github.com/meganerd/pi-go/internal/context"
 	"github.com/meganerd/pi-go/internal/et"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/provider/anthropic"
@@ -99,10 +100,17 @@ func main() {
 		loop = loop.WithSession(sess)
 	}
 
-	// Build system prompt
+	// Build system prompt with project context
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
 		systemPrompt = tui.DefaultSystemPrompt(tools)
+	}
+	cwd, _ := os.Getwd()
+	if pctx, err := projctx.Discover(cwd); err == nil {
+		if extra := pctx.ForSystemPrompt(); extra != "" {
+			systemPrompt += extra
+			fmt.Fprintf(os.Stderr, "Loaded %d project context file(s)\n", len(pctx.Files))
+		}
 	}
 
 	// Run TUI
