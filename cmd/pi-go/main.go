@@ -10,6 +10,7 @@ import (
 	"github.com/meganerd/pi-go/internal/agent"
 	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/config"
+	"github.com/meganerd/pi-go/internal/et"
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/provider/anthropic"
 	"github.com/meganerd/pi-go/internal/provider/openai"
@@ -62,6 +63,13 @@ func main() {
 		&tool.GrepTool{},
 		&tool.FindTool{FS: fs},
 		&tool.LsTool{FS: fs},
+	}
+
+	// Add et_delegate tool if electrictown is available
+	etDelegator := initEtDelegator(cfg)
+	if etDelegator != nil && etDelegator.Available() {
+		tools = append(tools, &tool.EtDelegateTool{Delegator: etDelegator})
+		fmt.Fprintln(os.Stderr, "et: electrictown integration active")
 	}
 
 	// Initialize session
@@ -201,6 +209,18 @@ func initSession(cfg *config.Config, resume bool) (session.Store, error) {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 	return store, nil
+}
+
+func initEtDelegator(cfg *config.Config) *et.CLIDelegator {
+	var configPath, outputDir string
+	if cfg.Et != nil {
+		if !cfg.Et.Enabled {
+			return nil
+		}
+		configPath = cfg.Et.ConfigPath
+		outputDir = cfg.Et.OutputDir
+	}
+	return et.NewCLIDelegator("", configPath, outputDir)
 }
 
 func truncate(s string, maxLen int) string {
