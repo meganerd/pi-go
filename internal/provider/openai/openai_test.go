@@ -149,3 +149,67 @@ func TestOpenAIChat_ToolCallsResponse(t *testing.T) {
 		t.Errorf("expected empty content, got: %q", resp.Message.Content)
 	}
 }
+
+func TestOpenAI_ParseStreamChunk_ToolUseEnd(t *testing.T) {
+	o := &OpenAI{}
+
+	// Chunk with finish_reason="tool_calls" should emit tool_use_end
+	fr := "tool_calls"
+	chunk := streamChunk{
+		Choices: []streamChoice{
+			{FinishReason: &fr},
+		},
+	}
+	data, _ := json.Marshal(chunk)
+	events := o.parseStreamChunk(string(data))
+
+	found := false
+	for _, e := range events {
+		if e.Type == "tool_use_end" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected tool_use_end event when finish_reason is tool_calls")
+	}
+}
+
+func TestOpenAI_ParseStreamChunk_NoToolUseEndOnStop(t *testing.T) {
+	o := &OpenAI{}
+
+	// Chunk with finish_reason="stop" should NOT emit tool_use_end
+	fr := "stop"
+	chunk := streamChunk{
+		Choices: []streamChoice{
+			{FinishReason: &fr},
+		},
+	}
+	data, _ := json.Marshal(chunk)
+	events := o.parseStreamChunk(string(data))
+
+	for _, e := range events {
+		if e.Type == "tool_use_end" {
+			t.Error("should not emit tool_use_end for finish_reason=stop")
+		}
+	}
+}
+
+func TestOpenAI_ParseStreamChunk_TextContent(t *testing.T) {
+	o := &OpenAI{}
+
+	content := "Hello world"
+	chunk := streamChunk{
+		Choices: []streamChoice{
+			{Delta: struct {
+				Content   *string       `json:"content"`
+				ToolCalls []apiToolCall `json:"tool_calls"`
+			}{Content: &content}},
+		},
+	}
+	data, _ := json.Marshal(chunk)
+	events := o.parseStreamChunk(string(data))
+
+	if len(events) != 1 || events[0].Type != "text" || events[0].Content != "Hello world" {
+		t.Errorf("expected text event with 'Hello world', got: %+v", events)
+	}
+}
