@@ -70,6 +70,11 @@ func (l *Loop) WithStreamCallback(cb StreamCallback) *Loop {
 	return l
 }
 
+// Provider returns the agent's provider.
+func (l *Loop) Provider() provider.Provider {
+	return l.provider
+}
+
 // Compactor returns the agent's compactor, or nil if none is set.
 func (l *Loop) Compactor() *compact.Compactor {
 	return l.compactor
