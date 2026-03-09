@@ -108,3 +108,127 @@ func TestDefaultConfigPath_NotEmpty(t *testing.T) {
 		t.Errorf("default config path should be absolute, got %q", path)
 	}
 }
+
+func TestValidate_ValidConfig(t *testing.T) {
+	cfg := &Config{
+		Provider:         "anthropic",
+		MaxTokens:        8192,
+		MaxContextTokens: 100000,
+	}
+	warnings := cfg.Validate()
+	if len(warnings) != 0 {
+		t.Errorf("valid config should have no warnings, got %v", warnings)
+	}
+}
+
+func TestValidate_UnknownProvider(t *testing.T) {
+	cfg := &Config{
+		Provider:         "invalid",
+		MaxTokens:        8192,
+		MaxContextTokens: 100000,
+	}
+	warnings := cfg.Validate()
+	found := false
+	for _, w := range warnings {
+		if contains(w, "unknown provider") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("should warn about unknown provider, got %v", warnings)
+	}
+}
+
+func TestValidate_HighMaxTokens(t *testing.T) {
+	cfg := &Config{
+		Provider:         "anthropic",
+		MaxTokens:        65536,
+		MaxContextTokens: 200000,
+	}
+	warnings := cfg.Validate()
+	found := false
+	for _, w := range warnings {
+		if contains(w, "unusually high") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("should warn about high max_tokens, got %v", warnings)
+	}
+}
+
+func TestValidate_MaxTokensExceedsContext(t *testing.T) {
+	cfg := &Config{
+		Provider:         "anthropic",
+		MaxTokens:        16000,
+		MaxContextTokens: 8000,
+	}
+	warnings := cfg.Validate()
+	found := false
+	for _, w := range warnings {
+		if contains(w, "exceeds max_context_tokens") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("should warn about max_tokens > max_context_tokens, got %v", warnings)
+	}
+}
+
+func TestValidate_LowContextTokens(t *testing.T) {
+	cfg := &Config{
+		Provider:         "anthropic",
+		MaxTokens:        100,
+		MaxContextTokens: 500,
+	}
+	warnings := cfg.Validate()
+	found := false
+	for _, w := range warnings {
+		if contains(w, "excessive compaction") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("should warn about low context tokens, got %v", warnings)
+	}
+}
+
+func TestValidate_SessionDirNotDir(t *testing.T) {
+	// Create a file where session dir is expected
+	f, err := os.CreateTemp("", "pi-go-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cfg := &Config{
+		Provider:         "anthropic",
+		MaxTokens:        8192,
+		MaxContextTokens: 100000,
+		SessionDir:       f.Name(),
+	}
+	warnings := cfg.Validate()
+	found := false
+	for _, w := range warnings {
+		if contains(w, "not a directory") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("should warn about session dir not being a directory, got %v", warnings)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+}
+
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

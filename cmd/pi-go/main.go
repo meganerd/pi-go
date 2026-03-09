@@ -61,6 +61,13 @@ func main() {
 	cfg := config.Load()
 	cfg.ApplyFlags(model, providerArg, sessionDir)
 
+	// Validate configuration and print warnings
+	if warnings := cfg.Validate(); len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+		}
+	}
+
 	// Initialize provider
 	prov, err := initProvider(cfg)
 	if err != nil {

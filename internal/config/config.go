@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -97,6 +98,51 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// Validate checks the configuration for potential issues and returns warnings.
+// It does not return errors for values that would prevent startup — those are
+// handled at initialization time. Warnings are informational.
+func (c *Config) Validate() []string {
+	var warnings []string
+
+	// Provider validation
+	validProviders := map[string]bool{"anthropic": true, "openai": true, "openrouter": true}
+	if !validProviders[c.Provider] {
+		warnings = append(warnings, fmt.Sprintf("unknown provider %q — valid: anthropic, openai, openrouter", c.Provider))
+	}
+
+	// Token limits
+	if c.MaxTokens < 1 {
+		warnings = append(warnings, "max_tokens should be at least 1")
+	}
+	if c.MaxTokens > 32768 {
+		warnings = append(warnings, fmt.Sprintf("max_tokens=%d is unusually high — most models cap at 8192-16384", c.MaxTokens))
+	}
+	if c.MaxContextTokens < 1000 {
+		warnings = append(warnings, "max_context_tokens below 1000 may cause excessive compaction")
+	}
+	if c.MaxTokens > c.MaxContextTokens {
+		warnings = append(warnings, "max_tokens exceeds max_context_tokens — output may be truncated")
+	}
+
+	// Session directory
+	if c.SessionDir != "" {
+		if info, err := os.Stat(c.SessionDir); err == nil && !info.IsDir() {
+			warnings = append(warnings, fmt.Sprintf("session_dir %q exists but is not a directory", c.SessionDir))
+		}
+	}
+
+	// Et config
+	if c.Et != nil && c.Et.Enabled {
+		if c.Et.ConfigPath != "" {
+			if _, err := os.Stat(c.Et.ConfigPath); err != nil {
+				warnings = append(warnings, fmt.Sprintf("et config_path %q not found", c.Et.ConfigPath))
+			}
+		}
+	}
+
+	return warnings
 }
 
 // ApplyFlags overlays CLI flag values onto the config.
