@@ -3,9 +3,9 @@
 # Usage:
 #   make                       Build for host (dynamic)
 #   make static                Build for host (static, CGO_ENABLED=0)
-#   make linux-arm64           Build for linux/arm64
-#   make linux-arm64-static    Build for linux/arm64 (static)
-#   make darwin-amd64          Build for darwin/amd64
+#   make linux-arm64           Build for specific platform (dynamic)
+#   make linux-arm64-static    Build for specific platform (static)
+#   make darwin-amd64          (7 platforms: linux, darwin, windows)
 #   make all                   Build all platforms (dynamic)
 #   make all-static            Build all platforms (static)
 #   make test                  Run tests
@@ -25,7 +25,8 @@ LDFLAGS  := -ldflags "-X $(PKG).version=$(VERSION) -X $(PKG).commit=$(COMMIT) -X
 BINARY   := pi-go
 
 # Supported platforms (os/arch)
-PLATFORMS := linux/amd64 linux/arm64 linux/riscv64 linux/ppc64 linux/ppc64le \
+# Note: Go does not support riscv32 — only riscv64 is available.
+PLATFORMS := linux/amd64 linux/arm64 linux/riscv64 \
              darwin/amd64 darwin/arm64 \
              windows/amd64 windows/arm64
 

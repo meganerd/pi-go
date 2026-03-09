@@ -11,11 +11,44 @@ Single binary. No npm. No Node.js.
 ## Build
 
 ```bash
-make build    # Build binary
-make test     # Run tests
-make lint     # Run linter
-make install  # Install to $GOPATH/bin
+make build        # Build for host (dynamic)
+make static       # Build for host (static, CGO_ENABLED=0)
+make test         # Run tests
+make lint         # Run linter
+make install      # Install to $GOPATH/bin
 ```
+
+### Cross-compilation
+
+Build for all supported platforms at once:
+
+```bash
+make all          # All platforms (dynamic)
+make all-static   # All platforms (static — recommended for distribution)
+make dist         # Static builds + tarballs + sha256 checksums
+```
+
+Build for a specific platform:
+
+```bash
+make linux-amd64-static
+make darwin-arm64-static
+make windows-amd64-static
+```
+
+#### Supported platforms
+
+| OS | Architecture | Target |
+|----|-------------|--------|
+| Linux | amd64 | `linux-amd64` |
+| Linux | arm64 | `linux-arm64` |
+| Linux | riscv64 | `linux-riscv64` |
+| macOS | amd64 | `darwin-amd64` |
+| macOS | arm64 (Apple Silicon) | `darwin-arm64` |
+| Windows | amd64 | `windows-amd64` |
+| Windows | arm64 | `windows-arm64` |
+
+> Go does not support RISC-V 32-bit (`riscv32`). Only `riscv64` is available.
 
 ## Usage
 
