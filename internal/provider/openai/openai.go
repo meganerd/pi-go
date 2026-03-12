@@ -18,11 +18,14 @@ const defaultBaseURL = "https://api.openai.com"
 
 // OpenAI implements the provider.Provider interface for the OpenAI Chat Completions API.
 type OpenAI struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
-	name    string // "openai" or "openrouter" etc.
+	apiKey   string
+	baseURL  string
+	chatPath string // API path for chat completions (default: /v1/chat/completions)
+	client   *http.Client
+	name     string // "openai", "openrouter", "zai", etc.
 }
+
+const defaultChatPath = "/v1/chat/completions"
 
 // New creates a new OpenAI-compatible provider.
 func New(apiKey string, baseURL string) *OpenAI {
@@ -30,20 +33,33 @@ func New(apiKey string, baseURL string) *OpenAI {
 		baseURL = defaultBaseURL
 	}
 	return &OpenAI{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		client:  &http.Client{},
-		name:    "openai",
+		apiKey:   apiKey,
+		baseURL:  baseURL,
+		chatPath: defaultChatPath,
+		client:   &http.Client{},
+		name:     "openai",
 	}
 }
 
 // NewOpenRouter creates an OpenRouter provider (OpenAI-compatible).
 func NewOpenRouter(apiKey string) *OpenAI {
 	return &OpenAI{
-		apiKey:  apiKey,
-		baseURL: "https://openrouter.ai/api",
-		client:  &http.Client{},
-		name:    "openrouter",
+		apiKey:   apiKey,
+		baseURL:  "https://openrouter.ai/api",
+		chatPath: defaultChatPath,
+		client:   &http.Client{},
+		name:     "openrouter",
+	}
+}
+
+// NewZAI creates a z.ai (Zhipu AI) provider (OpenAI-compatible).
+func NewZAI(apiKey string) *OpenAI {
+	return &OpenAI{
+		apiKey:   apiKey,
+		baseURL:  "https://api.z.ai/api/paas",
+		chatPath: "/v4/chat/completions",
+		client:   &http.Client{},
+		name:     "zai",
 	}
 }
 
@@ -118,7 +134,7 @@ func (o *OpenAI) Chat(ctx context.Context, req *provider.ChatRequest) (*provider
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+"/v1/chat/completions", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+o.chatPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -165,7 +181,7 @@ func (o *OpenAI) StreamChat(ctx context.Context, req *provider.ChatRequest) (<-c
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+"/v1/chat/completions", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+o.chatPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

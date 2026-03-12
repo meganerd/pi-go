@@ -234,6 +234,9 @@ func initProvider(cfg *config.Config) (provider.Provider, error) {
 	reg.Register("openrouter", func(apiKey, _ string) provider.Provider {
 		return openai.NewOpenRouter(apiKey)
 	})
+	reg.Register("zai", func(apiKey, _ string) provider.Provider {
+		return openai.NewZAI(apiKey)
+	})
 
 	// Resolve API key from environment
 	apiKey := ""
@@ -253,8 +256,13 @@ func initProvider(cfg *config.Config) (provider.Provider, error) {
 		if apiKey == "" {
 			return nil, fmt.Errorf("OPENROUTER_API_KEY environment variable not set. Set it with: export OPENROUTER_API_KEY=your-key")
 		}
+	case "zai":
+		apiKey = os.Getenv("ZAI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("ZAI_API_KEY environment variable not set. Set it with: export ZAI_API_KEY=your-key")
+		}
 	default:
-		return nil, fmt.Errorf("unknown provider %q. Available: anthropic, openai, openrouter", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider %q. Available: anthropic, openai, openrouter, zai", cfg.Provider)
 	}
 
 	prov := reg.Get(cfg.Provider, apiKey, "")
