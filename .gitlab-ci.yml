@@ -5,6 +5,8 @@ stages:
 variables:
   GOPATH: ${CI_PROJECT_DIR}/.go
   GOFLAGS: "-mod=readonly"
+  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
 
 default:
   image: golang:1.26
@@ -19,6 +21,7 @@ test:
   stage: test
   before_script:
     - apt-get update -qq && apt-get install -y -qq git ripgrep > /dev/null
+    - git checkout ${CI_COMMIT_REF_NAME} || true
   script:
     - go test ./... -v -race -coverprofile=coverage.out
     - go tool cover -func=coverage.out
