@@ -20,6 +20,7 @@ import (
 	"github.com/meganerd/pi-go/internal/provider"
 	"github.com/meganerd/pi-go/internal/provider/anthropic"
 	"github.com/meganerd/pi-go/internal/render"
+	"github.com/meganerd/pi-go/internal/provider/gemini"
 	"github.com/meganerd/pi-go/internal/provider/openai"
 	"github.com/meganerd/pi-go/internal/session"
 	"github.com/meganerd/pi-go/internal/tool"
@@ -41,7 +42,7 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.BoolVar(&listSessions, "list-sessions", false, "List recent sessions and exit")
 	flag.StringVar(&model, "model", "", "LLM model to use")
-	flag.StringVar(&providerArg, "provider", "", "LLM provider (anthropic, openai, openrouter)")
+	flag.StringVar(&providerArg, "provider", "", "LLM provider (anthropic, openai, openrouter, gemini)")
 	flag.StringVar(&sessionDir, "session-dir", "", "Session storage directory")
 	flag.BoolVar(&resume, "resume", false, "Resume last session for current directory")
 	flag.StringVar(&prompt, "prompt", "", "Send a single prompt and exit (use - for stdin)")
@@ -237,6 +238,9 @@ func initProvider(cfg *config.Config) (provider.Provider, error) {
 	reg.Register("zai", func(apiKey, _ string) provider.Provider {
 		return openai.NewZAI(apiKey)
 	})
+	reg.Register("gemini", func(apiKey, baseURL string) provider.Provider {
+		return gemini.New(apiKey, baseURL)
+	})
 
 	// Resolve API key from environment
 	apiKey := ""
@@ -261,8 +265,13 @@ func initProvider(cfg *config.Config) (provider.Provider, error) {
 		if apiKey == "" {
 			return nil, fmt.Errorf("ZAI_API_KEY environment variable not set. Set it with: export ZAI_API_KEY=your-key")
 		}
+	case "gemini":
+		apiKey = os.Getenv("GEMINI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set. Set it with: export GEMINI_API_KEY=your-key")
+		}
 	default:
-		return nil, fmt.Errorf("unknown provider %q. Available: anthropic, openai, openrouter, zai", cfg.Provider)
+		return nil, fmt.Errorf("unknown provider %q. Available: anthropic, openai, openrouter, gemini, zai", cfg.Provider)
 	}
 
 	prov := reg.Get(cfg.Provider, apiKey, "")

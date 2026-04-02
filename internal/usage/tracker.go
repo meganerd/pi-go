@@ -22,6 +22,9 @@ var knownPricing = map[string]Pricing{
 	"gpt-4o":      {InputPer1K: 0.0025, OutputPer1K: 0.01},
 	"gpt-4o-mini": {InputPer1K: 0.00015, OutputPer1K: 0.0006},
 	// OpenRouter passes through model pricing — use the underlying model name
+	// Google Gemini
+	"gemini-2.5-pro":   {InputPer1K: 0.00125, OutputPer1K: 0.01},
+	"gemini-2.5-flash": {InputPer1K: 0.00015, OutputPer1K: 0.0006},
 }
 
 // Tracker accumulates token usage and estimates cost.
