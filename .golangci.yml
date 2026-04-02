@@ -8,6 +8,8 @@ linters:
     - unused
     - gosec
     - ineffassign
+    - depguard
+    - gomoddirectives
   settings:
     errcheck:
       exclude-functions:
@@ -25,6 +27,20 @@ linters:
     gosec:
       excludes:
         - G304
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: "github.com/!(!charmbracelet|!meganerd).*"
+              desc: "Only charmbracelet and meganerd packages are allowed as external deps"
+          allow:
+            - $gostd
+            - github.com/meganerd/
+            - github.com/charmbracelet/
+            - github.com/muesli/
+            - github.com/erikgeiser/
+            - github.com/rivo/uniseg
+            - golang.org/x/
   exclusions:
     rules:
       - path: _test\.go
