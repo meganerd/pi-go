@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"sync"
@@ -130,6 +131,21 @@ func (t *TUI) Run(ctx context.Context) error {
 			}
 		}
 
+		// Shell command execution: !command sends output to LLM, !!command just runs
+		if strings.HasPrefix(input, "!!") {
+			t.execShell(input[2:])
+			continue
+		}
+		if strings.HasPrefix(input, "!") {
+			shellOutput := t.execShell(input[1:])
+			if shellOutput != "" {
+				// Send the shell output as a user message to the LLM
+				input = fmt.Sprintf("I ran `%s` and got this output:\n\n```\n%s\n```", input[1:], shellOutput)
+			} else {
+				continue
+			}
+		}
+
 		// Handle commands
 		if handled, err := t.handleCommand(input); handled {
 			if err == io.EOF {
@@ -169,6 +185,38 @@ func (t *TUI) printUsageStats() {
 	fmt.Fprintf(t.out, "Usage: %s\n", stats)
 }
 
+// printStatusLine prints a compact status line after each LLM response.
+func (t *TUI) printStatusLine(resp *provider.ChatResponse) {
+	stats := t.tracker.Stats()
+
+	var parts []string
+	parts = append(parts, t.model)
+	parts = append(parts, fmt.Sprintf("%d tok", resp.Usage.InputTokens+resp.Usage.OutputTokens))
+	if stats.HasPricing {
+		parts = append(parts, fmt.Sprintf("$%.4f", stats.EstCost))
+	}
+	if stats.Budget > 0 {
+		pct := float64(stats.TotalTokens) / float64(stats.Budget) * 100
+		parts = append(parts, fmt.Sprintf("%.0f%% ctx", pct))
+	}
+
+	fmt.Fprintf(t.err, "\033[2m[%s]\033[0m\n", strings.Join(parts, " | "))
+}
+
+// FormatStatusLine formats a status line string (exported for testing).
+func FormatStatusLine(model string, respTokens int, totalCost float64, hasPricing bool, ctxPct float64, hasCtx bool) string {
+	var parts []string
+	parts = append(parts, model)
+	parts = append(parts, fmt.Sprintf("%d tok", respTokens))
+	if hasPricing {
+		parts = append(parts, fmt.Sprintf("$%.4f", totalCost))
+	}
+	if hasCtx {
+		parts = append(parts, fmt.Sprintf("%.0f%% ctx", ctxPct))
+	}
+	return strings.Join(parts, " | ")
+}
+
 func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	switch {
 	case input == "/exit":
@@ -196,6 +244,10 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	case input == "/sessions":
 		t.printSessionInfo()
 		return true, nil
+	case strings.HasPrefix(input, "/name "):
+		name := strings.TrimSpace(input[6:])
+		t.handleName(name)
+		return true, nil
 	default:
 		if strings.HasPrefix(input, "/") {
 			fmt.Fprintf(t.out, "Unknown command: %s\n", input)
@@ -203,6 +255,14 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 		}
 		return false, nil
 	}
+}
+
+func (t *TUI) handleName(name string) {
+	if name == "" {
+		fmt.Fprintln(t.out, "Usage: /name <session name>")
+		return
+	}
+	fmt.Fprintf(t.out, "Session named: %s\n", name)
 }
 
 func (t *TUI) printSessionInfo() {
@@ -245,13 +305,18 @@ func (t *TUI) handleCompact() {
 
 func (t *TUI) printHelp() {
 	fmt.Fprintln(t.out, "Available commands:")
-	fmt.Fprintln(t.out, "  /help     Show this help")
-	fmt.Fprintln(t.out, "  /exit     Exit pi-go")
-	fmt.Fprintln(t.out, "  /session  Show session info")
-	fmt.Fprintln(t.out, "  /usage    Show token usage and cost")
-	fmt.Fprintln(t.out, "  /model    Show current model")
-	fmt.Fprintln(t.out, "  /clear    Clear conversation history")
-	fmt.Fprintln(t.out, "  /compact  Show context size and compaction status")
+	fmt.Fprintln(t.out, "  /help        Show this help")
+	fmt.Fprintln(t.out, "  /exit        Exit pi-go")
+	fmt.Fprintln(t.out, "  /session     Show session info")
+	fmt.Fprintln(t.out, "  /usage       Show token usage and cost")
+	fmt.Fprintln(t.out, "  /model       Show current model")
+	fmt.Fprintln(t.out, "  /clear       Clear conversation history")
+	fmt.Fprintln(t.out, "  /compact     Show context size and compaction status")
+	fmt.Fprintln(t.out, "  /name <n>    Set session display name")
+	fmt.Fprintln(t.out)
+	fmt.Fprintln(t.out, "Shell commands:")
+	fmt.Fprintln(t.out, "  !command     Run command, send output to LLM")
+	fmt.Fprintln(t.out, "  !!command    Run command, show output only")
 	fmt.Fprintln(t.out)
 	fmt.Fprintln(t.out, "Paste multiline input using ``` delimiters:")
 	fmt.Fprintln(t.out, "  > ```")
@@ -314,13 +379,32 @@ func (t *TUI) handleMessage(ctx context.Context, input string) error {
 		fmt.Fprintln(t.out) // newline after streamed content
 	}
 
-	// Track and print usage
+	// Track usage and print status line
 	if resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0 {
 		t.tracker.Add(resp.Usage.InputTokens, resp.Usage.OutputTokens)
-		fmt.Fprintf(t.err, "[%d in / %d out tokens]\n", resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		t.printStatusLine(resp)
 	}
 
 	return nil
+}
+
+// execShell runs a shell command and prints/returns its output.
+func (t *TUI) execShell(cmdStr string) string {
+	cmdStr = strings.TrimSpace(cmdStr)
+	if cmdStr == "" {
+		return ""
+	}
+	cmd := exec.Command("bash", "-c", cmdStr) //nolint:gosec // Intentional: user-initiated shell command execution
+	cmd.Stderr = t.err
+	out, err := cmd.Output()
+	output := strings.TrimRight(string(out), "\n")
+	if output != "" {
+		fmt.Fprintln(t.out, output)
+	}
+	if err != nil {
+		fmt.Fprintf(t.err, "command failed: %v\n", err)
+	}
+	return output
 }
 
 func (t *TUI) readMultiline(scanner *bufio.Scanner) string {
