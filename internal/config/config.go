@@ -61,18 +61,31 @@ func DefaultConfigPath() string {
 	return filepath.Join(home, ".config", "pi-go", "config.json")
 }
 
-// Load reads configuration from the default config file, then overlays
-// environment variables. CLI flags should be applied by the caller after Load.
+// ProjectConfigPath returns the project-local config file path for a directory.
+// Convention: .pi-go/config.json in the given directory.
+func ProjectConfigPath(dir string) string {
+	return filepath.Join(dir, ".pi-go", "config.json")
+}
+
+// Load reads configuration from the global config file, overlays the
+// project-local config, then applies environment variables. CLI flags
+// should be applied by the caller after Load.
 func Load() *Config {
 	cfg := &Config{}
 
-	// Layer 1: config file
+	// Layer 1: global config file
 	path := DefaultConfigPath()
 	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, cfg)
 	}
 
-	// Layer 2: environment variables (override file)
+	// Layer 2: project-local config (overrides global)
+	cwd, err := os.Getwd()
+	if err == nil {
+		MergeProjectConfig(cfg, cwd)
+	}
+
+	// Layer 3: environment variables (override both)
 	if v := os.Getenv("PI_GO_MODEL"); v != "" {
 		cfg.Model = v
 	}
@@ -80,7 +93,7 @@ func Load() *Config {
 		cfg.Provider = v
 	}
 
-	// Layer 3: defaults for unset values
+	// Layer 4: defaults for unset values
 	if cfg.Model == "" {
 		cfg.Model = DefaultModel
 	}
@@ -98,6 +111,45 @@ func Load() *Config {
 	}
 
 	return cfg
+}
+
+// MergeProjectConfig reads the project-local config from dir and merges
+// non-zero values into cfg. Project config wins over global config.
+func MergeProjectConfig(cfg *Config, dir string) {
+	path := ProjectConfigPath(dir)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var proj Config
+	if err := json.Unmarshal(data, &proj); err != nil {
+		return
+	}
+	// Merge: project values override global when set.
+	if proj.Model != "" {
+		cfg.Model = proj.Model
+	}
+	if proj.Provider != "" {
+		cfg.Provider = proj.Provider
+	}
+	if proj.SessionDir != "" {
+		cfg.SessionDir = proj.SessionDir
+	}
+	if proj.SystemPrompt != "" {
+		cfg.SystemPrompt = proj.SystemPrompt
+	}
+	if proj.MaxTokens > 0 {
+		cfg.MaxTokens = proj.MaxTokens
+	}
+	if proj.MaxContextTokens > 0 {
+		cfg.MaxContextTokens = proj.MaxContextTokens
+	}
+	if len(proj.Tools) > 0 {
+		cfg.Tools = proj.Tools
+	}
+	if proj.Et != nil {
+		cfg.Et = proj.Et
+	}
 }
 
 // Validate checks the configuration for potential issues and returns warnings.
