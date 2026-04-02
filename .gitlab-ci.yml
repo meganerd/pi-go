@@ -6,19 +6,20 @@ stages:
 include:
   - project: 'meganerd/ci-templates'
     file: '/go/test.yml'
-    ref: 'v1.0.0'
+    ref: 'v1.0.1'
   - project: 'meganerd/ci-templates'
     file: '/go/lint.yml'
-    ref: 'v1.0.0'
+    ref: 'v1.0.1'
   - project: 'meganerd/ci-templates'
     file: '/go/build.yml'
-    ref: 'v1.0.0'
+    ref: 'v1.0.1'
   - project: 'meganerd/ci-templates'
     file: '/go/security.yml'
-    ref: 'v1.0.0'
+    ref: 'v1.0.1'
 
 variables:
   GO_IMAGE: "golang:1.26"
+  GOLANGCI_LINT_IMAGE: "golangci/golangci-lint:v2.11"
   GO_BUILD_PATH: "./cmd/pi-go/"
   GO_BINARY_NAME: "pi-go"
   GO_VERSION_PKG: "github.com/meganerd/pi-go/internal/version"
