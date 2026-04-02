@@ -394,7 +394,7 @@ func (t *TUI) execShell(cmdStr string) string {
 	if cmdStr == "" {
 		return ""
 	}
-	cmd := exec.Command("bash", "-c", cmdStr)
+	cmd := exec.Command("bash", "-c", cmdStr) //nolint:gosec // Intentional: user-initiated shell command execution
 	cmd.Stderr = t.err
 	out, err := cmd.Output()
 	output := strings.TrimRight(string(out), "\n")
