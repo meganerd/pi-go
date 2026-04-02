@@ -1,74 +1,24 @@
-include:
-  - template: Security/Dependency-Scanning.gitlab-ci.yml
-
 stages:
   - test
   - build
   - security
 
+include:
+  - project: 'meganerd/ci-templates'
+    file: '/go/test.yml'
+    ref: 'v1.0.0'
+  - project: 'meganerd/ci-templates'
+    file: '/go/lint.yml'
+    ref: 'v1.0.0'
+  - project: 'meganerd/ci-templates'
+    file: '/go/build.yml'
+    ref: 'v1.0.0'
+  - project: 'meganerd/ci-templates'
+    file: '/go/security.yml'
+    ref: 'v1.0.0'
+
 variables:
-  GOPATH: ${CI_PROJECT_DIR}/.go
-  GOFLAGS: "-mod=readonly"
-  GIT_DEPTH: 0
-  GIT_STRATEGY: clone
-
-default:
-  image: golang:1.26
-  tags:
-    - docker
-  cache:
-    key: ${CI_COMMIT_REF_SLUG}
-    paths:
-      - .go/pkg/mod/
-
-test:
-  stage: test
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq git ripgrep > /dev/null
-    - git checkout ${CI_COMMIT_REF_NAME} || true
-  script:
-    - go test ./... -v -race -coverprofile=coverage.out
-    - go tool cover -func=coverage.out
-
-lint:
-  stage: test
-  image: golangci/golangci-lint:v2.11
-  script:
-    - golangci-lint run --new-from-rev=${CI_MERGE_REQUEST_DIFF_BASE_SHA:-HEAD~1} ./...
-    - golangci-lint run --new=false ./... || true
-
-build:
-  stage: build
-  script:
-    - go build -ldflags "-X main.version=${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}" -o pi-go ./cmd/pi-go/
-  artifacts:
-    paths:
-      - pi-go
-    expire_in: 1 week
-  needs:
-    - test
-    - lint
-
-# Supply chain security: govulncheck (known CVEs) + nancy (OSS Index) + SBOM
-security:
-  stage: security
-  image: golang:1.26
-  script:
-    # govulncheck — checks Go vulnerability database for reachable vulns
-    - go install golang.org/x/vuln/cmd/govulncheck@latest
-    - $GOPATH/bin/govulncheck ./...
-    # nancy — checks Sonatype OSS Index for known vulnerabilities
-    - go install github.com/sonatype-nexus-community/nancy@latest
-    - go list -json -deps ./... | $GOPATH/bin/nancy sleuth || true
-    # CycloneDX SBOM — generates Software Bill of Materials
-    - go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
-    - $GOPATH/bin/cyclonedx-gomod mod -json -output bom.json || true
-  artifacts:
-    paths:
-      - bom.json
-    expire_in: 30 days
-    when: always
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_TAG
+  GO_BUILD_PATH: "./cmd/pi-go/"
+  GO_BINARY_NAME: "pi-go"
+  GO_VERSION_PKG: "github.com/meganerd/pi-go/internal/version"
+  GO_TEST_EXTRA_PACKAGES: "ripgrep"
