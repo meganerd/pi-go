@@ -244,6 +244,15 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 	case input == "/sessions":
 		t.printSessionInfo()
 		return true, nil
+	case input == "/tree":
+		t.handleTree()
+		return true, nil
+	case input == "/fork":
+		t.handleFork()
+		return true, nil
+	case strings.HasPrefix(input, "/export"):
+		t.handleExport(strings.TrimSpace(strings.TrimPrefix(input, "/export")))
+		return true, nil
 	case strings.HasPrefix(input, "/name "):
 		name := strings.TrimSpace(input[6:])
 		t.handleName(name)
@@ -255,6 +264,65 @@ func (t *TUI) handleCommand(input string) (handled bool, err error) {
 		}
 		return false, nil
 	}
+}
+
+func (t *TUI) handleTree() {
+	if t.session == nil {
+		fmt.Fprintln(t.out, "No active session")
+		return
+	}
+	msgs, err := t.session.Messages()
+	if err != nil {
+		fmt.Fprintf(t.err, "Error reading session: %v\n", err)
+		return
+	}
+	fmt.Fprint(t.out, session.TreeView(msgs))
+}
+
+func (t *TUI) handleFork() {
+	if t.session == nil {
+		fmt.Fprintln(t.out, "No active session to fork")
+		return
+	}
+	branches, err := t.session.Branches()
+	if err != nil {
+		fmt.Fprintf(t.err, "Error reading branches: %v\n", err)
+		return
+	}
+	msgs, _ := t.session.Messages()
+	if len(msgs) == 0 {
+		fmt.Fprintln(t.out, "Session is empty, nothing to fork from")
+		return
+	}
+	// Fork from current position — start a new branch from the last message
+	lastID := msgs[len(msgs)-1].ID
+	if err := t.session.Branch(lastID); err != nil {
+		fmt.Fprintf(t.err, "Error forking: %v\n", err)
+		return
+	}
+	fmt.Fprintf(t.out, "Forked from message %s (%d branch points total)\n", lastID, len(branches)+1)
+}
+
+func (t *TUI) handleExport(path string) {
+	if t.session == nil {
+		fmt.Fprintln(t.out, "No active session to export")
+		return
+	}
+	msgs, err := t.session.Messages()
+	if err != nil {
+		fmt.Fprintf(t.err, "Error reading session: %v\n", err)
+		return
+	}
+	md := session.ExportMarkdown(msgs)
+
+	if path == "" {
+		path = "session-export.md"
+	}
+	if err := os.WriteFile(path, []byte(md), 0644); err != nil {
+		fmt.Fprintf(t.err, "Error writing export: %v\n", err)
+		return
+	}
+	fmt.Fprintf(t.out, "Session exported to %s (%d messages)\n", path, len(msgs))
 }
 
 func (t *TUI) handleName(name string) {
@@ -312,6 +380,9 @@ func (t *TUI) printHelp() {
 	fmt.Fprintln(t.out, "  /model       Show current model")
 	fmt.Fprintln(t.out, "  /clear       Clear conversation history")
 	fmt.Fprintln(t.out, "  /compact     Show context size and compaction status")
+	fmt.Fprintln(t.out, "  /tree        Show session message tree")
+	fmt.Fprintln(t.out, "  /fork        Create branch from current position")
+	fmt.Fprintln(t.out, "  /export [f]  Export session to markdown file")
 	fmt.Fprintln(t.out, "  /name <n>    Set session display name")
 	fmt.Fprintln(t.out)
 	fmt.Fprintln(t.out, "Shell commands:")
