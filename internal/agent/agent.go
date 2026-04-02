@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/meganerd/pi-go/internal/compact"
 	"github.com/meganerd/pi-go/internal/message"
@@ -31,6 +32,7 @@ type Loop struct {
 	onToolCall  ToolCallback
 	onStream    StreamCallback
 	onConfirm   ConfirmCallback
+	parallel    bool // when true, execute read-only tools in parallel
 }
 
 // New creates a new agent loop with the given provider and tools.
@@ -67,6 +69,12 @@ func (l *Loop) WithToolCallback(cb ToolCallback) *Loop {
 // WithStreamCallback sets a callback for streaming text tokens.
 func (l *Loop) WithStreamCallback(cb StreamCallback) *Loop {
 	l.onStream = cb
+	return l
+}
+
+// WithParallelTools enables parallel execution of read-only tools.
+func (l *Loop) WithParallelTools() *Loop {
+	l.parallel = true
 	return l
 }
 
@@ -126,62 +134,9 @@ func (l *Loop) Run(ctx context.Context, req *provider.ChatRequest) (*provider.Ch
 		l.persist(&resp.Message)
 		req.Messages = append(req.Messages, resp.Message)
 
-		// Execute each tool call and append results
-		for _, tc := range resp.Message.ToolCalls {
-			if l.onToolCall != nil {
-				l.onToolCall(tc.Name, false, "", false)
-			}
-
-			// Check confirmation for non-read-only tools
-			if l.onConfirm != nil && !IsReadOnly(tc.Name) {
-				if !l.onConfirm(tc.Name, tc.Input) {
-					declinedMsg := "Tool execution declined by user"
-					if l.onToolCall != nil {
-						l.onToolCall(tc.Name, true, declinedMsg, true)
-					}
-					toolMsg := message.Message{
-						Role: message.RoleTool,
-						ToolResult: &message.ToolResultMsg{
-							ToolCallID: tc.ID,
-							Content:    declinedMsg,
-							IsError:    true,
-						},
-					}
-					l.persist(&toolMsg)
-					req.Messages = append(req.Messages, toolMsg)
-					continue
-				}
-			}
-
-			result, err := l.executeTool(ctx, tc)
-			if err != nil {
-				errContent := fmt.Sprintf("Error: %v", err)
-				if l.onToolCall != nil {
-					l.onToolCall(tc.Name, true, errContent, true)
-				}
-				toolMsg := message.Message{
-					Role: message.RoleTool,
-					ToolResult: &message.ToolResultMsg{
-						ToolCallID: tc.ID,
-						Content:    errContent,
-						IsError:    true,
-					},
-				}
-				l.persist(&toolMsg)
-				req.Messages = append(req.Messages, toolMsg)
-				continue
-			}
-			if l.onToolCall != nil {
-				l.onToolCall(tc.Name, true, result.Output, false)
-			}
-
-			toolMsg := message.Message{
-				Role: message.RoleTool,
-				ToolResult: &message.ToolResultMsg{
-					ToolCallID: tc.ID,
-					Content:    result.Output,
-				},
-			}
+		// Execute tool calls — parallel for read-only tools when enabled.
+		toolMsgs := l.executeToolCalls(ctx, resp.Message.ToolCalls)
+		for _, toolMsg := range toolMsgs {
 			l.persist(&toolMsg)
 			req.Messages = append(req.Messages, toolMsg)
 		}
@@ -294,6 +249,101 @@ func (l *Loop) persist(msg *message.Message) {
 		if err := l.session.Append(msg); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to persist message: %v\n", err)
 		}
+	}
+}
+
+// executeToolCalls runs tool calls, optionally in parallel for read-only tools.
+// Results are always returned in the original order.
+func (l *Loop) executeToolCalls(ctx context.Context, calls []message.ToolCall) []message.Message {
+	// Check if all calls are read-only and parallel is enabled
+	allReadOnly := l.parallel
+	if allReadOnly {
+		for _, tc := range calls {
+			if !IsReadOnly(tc.Name) {
+				allReadOnly = false
+				break
+			}
+		}
+	}
+
+	if allReadOnly && len(calls) > 1 {
+		return l.executeToolCallsParallel(ctx, calls)
+	}
+	return l.executeToolCallsSequential(ctx, calls)
+}
+
+func (l *Loop) executeToolCallsSequential(ctx context.Context, calls []message.ToolCall) []message.Message {
+	var msgs []message.Message
+	for _, tc := range calls {
+		msgs = append(msgs, l.executeSingleToolCall(ctx, tc))
+	}
+	return msgs
+}
+
+func (l *Loop) executeToolCallsParallel(ctx context.Context, calls []message.ToolCall) []message.Message {
+	results := make([]message.Message, len(calls))
+	var wg sync.WaitGroup
+
+	for i, tc := range calls {
+		wg.Add(1)
+		go func(idx int, call message.ToolCall) {
+			defer wg.Done()
+			results[idx] = l.executeSingleToolCall(ctx, call)
+		}(i, tc)
+	}
+
+	wg.Wait()
+	return results
+}
+
+func (l *Loop) executeSingleToolCall(ctx context.Context, tc message.ToolCall) message.Message {
+	if l.onToolCall != nil {
+		l.onToolCall(tc.Name, false, "", false)
+	}
+
+	// Check confirmation for non-read-only tools
+	if l.onConfirm != nil && !IsReadOnly(tc.Name) {
+		if !l.onConfirm(tc.Name, tc.Input) {
+			declinedMsg := "Tool execution declined by user"
+			if l.onToolCall != nil {
+				l.onToolCall(tc.Name, true, declinedMsg, true)
+			}
+			return message.Message{
+				Role: message.RoleTool,
+				ToolResult: &message.ToolResultMsg{
+					ToolCallID: tc.ID,
+					Content:    declinedMsg,
+					IsError:    true,
+				},
+			}
+		}
+	}
+
+	result, err := l.executeTool(ctx, tc)
+	if err != nil {
+		errContent := fmt.Sprintf("Error: %v", err)
+		if l.onToolCall != nil {
+			l.onToolCall(tc.Name, true, errContent, true)
+		}
+		return message.Message{
+			Role: message.RoleTool,
+			ToolResult: &message.ToolResultMsg{
+				ToolCallID: tc.ID,
+				Content:    errContent,
+				IsError:    true,
+			},
+		}
+	}
+
+	if l.onToolCall != nil {
+		l.onToolCall(tc.Name, true, result.Output, false)
+	}
+	return message.Message{
+		Role: message.RoleTool,
+		ToolResult: &message.ToolResultMsg{
+			ToolCallID: tc.ID,
+			Content:    result.Output,
+		},
 	}
 }
 

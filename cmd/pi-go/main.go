@@ -40,6 +40,9 @@ func main() {
 		toolsArg     string
 		noTools      bool
 		sessionID    string
+		jsonMode     bool
+		maxTokens    int
+		temperature  float64
 	)
 
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
@@ -52,6 +55,9 @@ func main() {
 	flag.StringVar(&toolsArg, "tools", "", "Comma-separated list of enabled tools (e.g. read,grep,find,ls)")
 	flag.BoolVar(&noTools, "no-tools", false, "Disable all tools")
 	flag.StringVar(&sessionID, "session-id", "", "Resume a specific session by ID")
+	flag.BoolVar(&jsonMode, "json", false, "Output events as JSON lines (for scripting)")
+	flag.IntVar(&maxTokens, "max-tokens", 0, "Override max output tokens per LLM call")
+	flag.Float64Var(&temperature, "temperature", 0, "Set LLM temperature (0 = default)")
 	flag.Parse()
 
 	if showVersion {
@@ -67,6 +73,9 @@ func main() {
 	// Load and merge configuration
 	cfg := config.Load()
 	cfg.ApplyFlags(model, providerArg, sessionDir)
+	if maxTokens > 0 {
+		cfg.MaxTokens = maxTokens
+	}
 
 	// Validate configuration and print warnings
 	if warnings := cfg.Validate(); len(warnings) > 0 {
@@ -140,7 +149,8 @@ func main() {
 		}).
 		WithStreamCallback(func(text string) {
 			fmt.Print(text)
-		})
+		}).
+		WithParallelTools()
 	if sess != nil {
 		loop = loop.WithSession(sess)
 	}
@@ -177,7 +187,7 @@ func main() {
 
 	// Non-interactive mode: --prompt flag
 	if prompt != "" {
-		runPrompt(prompt, loop, cfg, systemPrompt, sess)
+		runPrompt(prompt, loop, cfg, systemPrompt, sess, jsonMode)
 		return
 	}
 
@@ -208,7 +218,7 @@ func main() {
 	}
 }
 
-func runPrompt(prompt string, loop *agent.Loop, cfg *config.Config, systemPrompt string, sess session.Store) {
+func runPrompt(prompt string, loop *agent.Loop, cfg *config.Config, systemPrompt string, sess session.Store, jsonMode bool) {
 	// Read from stdin if prompt is "-"
 	if prompt == "-" {
 		data, err := io.ReadAll(os.Stdin)
@@ -241,11 +251,17 @@ func runPrompt(prompt string, loop *agent.Loop, cfg *config.Config, systemPrompt
 		os.Exit(1)
 	}
 
-	// Print response — skip if streaming already printed tokens
-	if !provider.CanStream(loop.Provider()) && resp.Message.Content != "" {
-		fmt.Println(render.Markdown(resp.Message.Content))
-	} else if provider.CanStream(loop.Provider()) {
-		fmt.Println() // trailing newline after streamed content
+	if jsonMode {
+		jw := tui.NewJSONWriter(nil)
+		jw.EmitMessage(resp.Message)
+		jw.EmitUsage(resp, 0)
+	} else {
+		// Print response — skip if streaming already printed tokens
+		if !provider.CanStream(loop.Provider()) && resp.Message.Content != "" {
+			fmt.Println(render.Markdown(resp.Message.Content))
+		} else if provider.CanStream(loop.Provider()) {
+			fmt.Println() // trailing newline after streamed content
+		}
 	}
 
 	if sess != nil {
