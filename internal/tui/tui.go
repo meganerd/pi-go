@@ -318,7 +318,7 @@ func (t *TUI) handleExport(path string) {
 	if path == "" {
 		path = "session-export.md"
 	}
-	if err := os.WriteFile(path, []byte(md), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(md), 0600); err != nil {
 		fmt.Fprintf(t.err, "Error writing export: %v\n", err)
 		return
 	}
