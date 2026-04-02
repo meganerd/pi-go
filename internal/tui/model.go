@@ -131,6 +131,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyCtrlD:
 			m.quitting = true
 			return m, tea.Quit
+		case tea.KeyCtrlG:
+			// Open external editor
+			return m, tea.ExecProcess(editorCmd(), func(err error) tea.Msg {
+				if err != nil {
+					return agentResponseMsg{err: fmt.Errorf("editor: %w", err)}
+				}
+				return nil
+			})
 		case tea.KeyEnter:
 			if m.waiting {
 				return m, nil // ignore input while waiting
@@ -383,6 +391,19 @@ func (m *Model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	case strings.HasPrefix(input, "/name "):
 		name := strings.TrimSpace(input[6:])
 		m.appendContent(fmt.Sprintf("Session named: %s", name))
+	case input == "/share":
+		if m.sess == nil {
+			m.appendContent("No active session to share")
+		} else {
+			msgs, _ := m.sess.Messages()
+			md := session.ExportMarkdown(msgs)
+			result, err := Share("pi-go session", md)
+			if err != nil {
+				m.appendContent(fmt.Sprintf("Share error: %v", err))
+			} else {
+				m.appendContent(fmt.Sprintf("Shared to %s: %s", result.Platform, result.URL))
+			}
+		}
 	case input == "/compact":
 		compactor := m.agent.Compactor()
 		if compactor == nil {
@@ -465,11 +486,16 @@ func (m *Model) helpText() string {
   /tree        Show session message tree
   /fork        Create branch from current position
   /export [f]  Export session to markdown file
+  /share       Share session (GitLab snippet or GitHub gist)
   /name <n>    Set session display name
 
 Shell commands:
   !command     Run and send output to LLM
-  !!command    Run without sending to LLM`
+  !!command    Run without sending to LLM
+
+Keyboard shortcuts:
+  Ctrl+G       Open $EDITOR for long input
+  Ctrl+C/D     Exit`
 }
 
 func execShellCmd(cmdStr string) string {
@@ -480,6 +506,23 @@ func execShellCmd(cmdStr string) string {
 	cmd := exec.Command("bash", "-c", cmdStr) //nolint:gosec // User-initiated shell command
 	out, _ := cmd.CombinedOutput()
 	return strings.TrimRight(string(out), "\n")
+}
+
+// editorCmd returns an exec.Cmd for the user's preferred editor.
+func editorCmd() *exec.Cmd {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+	tmpFile, err := os.CreateTemp("", "pi-go-edit-*.md")
+	if err != nil {
+		return exec.Command("echo", "failed to create temp file")
+	}
+	_ = tmpFile.Close()
+	return exec.Command(editor, tmpFile.Name()) //nolint:gosec // User-configured editor
 }
 
 func truncateStr(s string, maxLen int) string {
