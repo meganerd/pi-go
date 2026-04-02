@@ -205,12 +205,8 @@ func main() {
 		opts = append(opts, tui.WithSession(sess))
 	}
 
-	ui := tui.New(loop, opts...)
-	if err := ui.Run(context.Background()); err != nil {
-		if sess != nil {
-			sess.Close()
-		}
-		os.Exit(0) // /exit returns io.EOF — clean exit
+	if err := tui.RunBubbleTea(loop, opts...); err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 	}
 
 	if sess != nil {
