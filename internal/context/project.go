@@ -71,6 +71,50 @@ func Discover(dir string) (*ProjectContext, error) {
 	return ctx, nil
 }
 
+// DiscoverSystemPromptFiles searches for SYSTEM.md and APPEND_SYSTEM.md in
+// the given directory and its parents. Returns the first SYSTEM.md found
+// (replaces default prompt) and the first APPEND_SYSTEM.md found (appended
+// to default prompt).
+func DiscoverSystemPromptFiles(dir string) (systemPrompt, appendPrompt string) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", ""
+	}
+
+	for {
+		// Check SYSTEM.md (replaces default system prompt)
+		if systemPrompt == "" {
+			if data, err := os.ReadFile(filepath.Join(dir, "SYSTEM.md")); err == nil {
+				content := strings.TrimSpace(string(data))
+				if content != "" {
+					systemPrompt = content
+				}
+			}
+		}
+		// Check APPEND_SYSTEM.md (appended to system prompt)
+		if appendPrompt == "" {
+			if data, err := os.ReadFile(filepath.Join(dir, "APPEND_SYSTEM.md")); err == nil {
+				content := strings.TrimSpace(string(data))
+				if content != "" {
+					appendPrompt = content
+				}
+			}
+		}
+
+		// Stop if we found both or reached root.
+		if systemPrompt != "" && appendPrompt != "" {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return systemPrompt, appendPrompt
+}
+
 // ForSystemPrompt formats discovered context files for injection into the system prompt.
 func (p *ProjectContext) ForSystemPrompt() string {
 	if len(p.Files) == 0 {

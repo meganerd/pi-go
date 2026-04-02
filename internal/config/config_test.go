@@ -220,6 +220,58 @@ func TestValidate_SessionDirNotDir(t *testing.T) {
 	}
 }
 
+func TestMergeProjectConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create .pi-go/config.json with project overrides
+	projDir := filepath.Join(dir, ".pi-go")
+	os.MkdirAll(projDir, 0755)
+	projCfg := Config{
+		Model:    "project-model",
+		Provider: "openai",
+	}
+	data, _ := json.Marshal(projCfg)
+	os.WriteFile(filepath.Join(projDir, "config.json"), data, 0644)
+
+	// Start with a global config
+	cfg := &Config{
+		Model:            "global-model",
+		Provider:         "anthropic",
+		MaxTokens:        4096,
+		MaxContextTokens: 50000,
+	}
+
+	MergeProjectConfig(cfg, dir)
+
+	// Project values should override
+	if cfg.Model != "project-model" {
+		t.Errorf("model = %q, want project-model", cfg.Model)
+	}
+	if cfg.Provider != "openai" {
+		t.Errorf("provider = %q, want openai", cfg.Provider)
+	}
+	// Non-overridden values preserved
+	if cfg.MaxTokens != 4096 {
+		t.Errorf("max_tokens = %d, should stay 4096", cfg.MaxTokens)
+	}
+}
+
+func TestMergeProjectConfig_NoFile(t *testing.T) {
+	cfg := &Config{Model: "original"}
+	MergeProjectConfig(cfg, "/nonexistent/path")
+	if cfg.Model != "original" {
+		t.Errorf("model should be unchanged, got %q", cfg.Model)
+	}
+}
+
+func TestProjectConfigPath(t *testing.T) {
+	path := ProjectConfigPath("/home/user/project")
+	expected := filepath.Join("/home/user/project", ".pi-go", "config.json")
+	if path != expected {
+		t.Errorf("path = %q, want %q", path, expected)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
 }

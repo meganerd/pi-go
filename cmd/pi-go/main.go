@@ -37,6 +37,8 @@ func main() {
 		sessionDir   string
 		resume       bool
 		prompt       string
+		toolsArg     string
+		noTools      bool
 	)
 
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
@@ -46,6 +48,8 @@ func main() {
 	flag.StringVar(&sessionDir, "session-dir", "", "Session storage directory")
 	flag.BoolVar(&resume, "resume", false, "Resume last session for current directory")
 	flag.StringVar(&prompt, "prompt", "", "Send a single prompt and exit (use - for stdin)")
+	flag.StringVar(&toolsArg, "tools", "", "Comma-separated list of enabled tools (e.g. read,grep,find,ls)")
+	flag.BoolVar(&noTools, "no-tools", false, "Disable all tools")
 	flag.Parse()
 
 	if showVersion {
@@ -86,6 +90,15 @@ func main() {
 		&tool.GrepTool{},
 		&tool.FindTool{FS: fs},
 		&tool.LsTool{FS: fs},
+	}
+
+	// Apply tool filtering from CLI flags
+	if noTools {
+		tools = nil
+	} else if toolsArg != "" {
+		tools = filterTools(tools, strings.Split(toolsArg, ","))
+	} else if len(cfg.Tools) > 0 {
+		tools = filterTools(tools, cfg.Tools)
 	}
 
 	// Add et_delegate tool if electrictown is available
@@ -131,11 +144,25 @@ func main() {
 	}
 
 	// Build system prompt with project context
+	cwd, _ := os.Getwd()
+
+	// SYSTEM.md replaces the default prompt; APPEND_SYSTEM.md appends to it.
+	sysMd, appendMd := projctx.DiscoverSystemPromptFiles(cwd)
+
 	systemPrompt := cfg.SystemPrompt
 	if systemPrompt == "" {
-		systemPrompt = tui.DefaultSystemPrompt(tools)
+		if sysMd != "" {
+			systemPrompt = sysMd
+			fmt.Fprintln(os.Stderr, "Loaded SYSTEM.md (replaces default prompt)")
+		} else {
+			systemPrompt = tui.DefaultSystemPrompt(tools)
+		}
 	}
-	cwd, _ := os.Getwd()
+	if appendMd != "" {
+		systemPrompt += "\n\n" + appendMd
+		fmt.Fprintln(os.Stderr, "Loaded APPEND_SYSTEM.md")
+	}
+
 	if pctx, err := projctx.Discover(cwd); err == nil {
 		if extra := pctx.ForSystemPrompt(); extra != "" {
 			systemPrompt += extra
@@ -367,4 +394,19 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// filterTools returns only tools whose names appear in the allowed list.
+func filterTools(tools []tool.Tool, allowed []string) []tool.Tool {
+	set := make(map[string]bool, len(allowed))
+	for _, name := range allowed {
+		set[strings.TrimSpace(name)] = true
+	}
+	var filtered []tool.Tool
+	for _, t := range tools {
+		if set[t.Name()] {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }

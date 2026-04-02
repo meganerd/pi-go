@@ -114,6 +114,68 @@ func TestProjectContext_ForSystemPrompt_NoFiles(t *testing.T) {
 	}
 }
 
+func TestDiscoverSystemPromptFiles_SystemMD(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "SYSTEM.md"), []byte("Custom system prompt."), 0644)
+
+	sys, app := DiscoverSystemPromptFiles(dir)
+	if sys != "Custom system prompt." {
+		t.Errorf("system = %q, want 'Custom system prompt.'", sys)
+	}
+	if app != "" {
+		t.Errorf("append should be empty, got %q", app)
+	}
+}
+
+func TestDiscoverSystemPromptFiles_AppendMD(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "APPEND_SYSTEM.md"), []byte("Extra rules."), 0644)
+
+	sys, app := DiscoverSystemPromptFiles(dir)
+	if sys != "" {
+		t.Errorf("system should be empty, got %q", sys)
+	}
+	if app != "Extra rules." {
+		t.Errorf("append = %q, want 'Extra rules.'", app)
+	}
+}
+
+func TestDiscoverSystemPromptFiles_Both(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "SYSTEM.md"), []byte("Replace this."), 0644)
+	os.WriteFile(filepath.Join(dir, "APPEND_SYSTEM.md"), []byte("Append this."), 0644)
+
+	sys, app := DiscoverSystemPromptFiles(dir)
+	if sys != "Replace this." {
+		t.Errorf("system = %q, want 'Replace this.'", sys)
+	}
+	if app != "Append this." {
+		t.Errorf("append = %q, want 'Append this.'", app)
+	}
+}
+
+func TestDiscoverSystemPromptFiles_ParentDir(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "sub")
+	os.MkdirAll(child, 0755)
+	os.WriteFile(filepath.Join(parent, "SYSTEM.md"), []byte("Parent prompt."), 0644)
+
+	sys, _ := DiscoverSystemPromptFiles(child)
+	if sys != "Parent prompt." {
+		t.Errorf("should find parent SYSTEM.md, got %q", sys)
+	}
+}
+
+func TestDiscoverSystemPromptFiles_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "SYSTEM.md"), []byte("  \n  "), 0644)
+
+	sys, _ := DiscoverSystemPromptFiles(dir)
+	if sys != "" {
+		t.Errorf("empty SYSTEM.md should be ignored, got %q", sys)
+	}
+}
+
 func TestProjectContext_ForSystemPrompt_WithFiles(t *testing.T) {
 	ctx := &ProjectContext{
 		Files: []ContextFile{
