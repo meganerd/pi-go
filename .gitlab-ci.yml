@@ -18,7 +18,10 @@ include:
     ref: 'v1.0.0'
 
 variables:
+  GO_IMAGE: "golang:1.26"
   GO_BUILD_PATH: "./cmd/pi-go/"
   GO_BINARY_NAME: "pi-go"
   GO_VERSION_PKG: "github.com/meganerd/pi-go/internal/version"
   GO_TEST_EXTRA_PACKAGES: "ripgrep"
+  GIT_DEPTH: 0
+  GIT_STRATEGY: clone
