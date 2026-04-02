@@ -186,18 +186,48 @@ func TestTUI_ProviderError(t *testing.T) {
 	}
 }
 
-func TestTUI_UsageDisplay(t *testing.T) {
+func TestTUI_StatusLine(t *testing.T) {
 	in := strings.NewReader("test\n/exit\n")
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 
 	loop := agent.New(&mockProvider{}, nil)
-	ui := New(loop, WithIO(in, out, errOut))
+	ui := New(loop, WithIO(in, out, errOut), WithModel("test-model"))
 
 	_ = ui.Run(context.Background())
 
-	if !strings.Contains(errOut.String(), "10 in / 5 out tokens") {
-		t.Errorf("should show token usage on stderr, got: %s", errOut.String())
+	// Should show status line with model and tokens
+	if !strings.Contains(errOut.String(), "test-model") {
+		t.Errorf("status line should contain model name, got: %s", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "15 tok") {
+		t.Errorf("status line should contain token count, got: %s", errOut.String())
+	}
+}
+
+func TestFormatStatusLine(t *testing.T) {
+	line := FormatStatusLine("opus", 150, 0.0234, true, 42.5, true)
+	if !strings.Contains(line, "opus") {
+		t.Errorf("should contain model: %s", line)
+	}
+	if !strings.Contains(line, "150 tok") {
+		t.Errorf("should contain tokens: %s", line)
+	}
+	if !strings.Contains(line, "$0.0234") {
+		t.Errorf("should contain cost: %s", line)
+	}
+	if !strings.Contains(line, "42% ctx") {
+		t.Errorf("should contain context pct: %s", line)
+	}
+}
+
+func TestFormatStatusLine_NoPricing(t *testing.T) {
+	line := FormatStatusLine("unknown-model", 100, 0, false, 0, false)
+	if strings.Contains(line, "$") {
+		t.Errorf("should not contain cost when no pricing: %s", line)
+	}
+	if strings.Contains(line, "ctx") {
+		t.Errorf("should not contain ctx when no budget: %s", line)
 	}
 }
 
@@ -261,6 +291,78 @@ func TestTUI_MultilineInput(t *testing.T) {
 
 	if !strings.Contains(out.String(), "Echo: line one\nline two") {
 		t.Errorf("should echo multiline input, got: %s", out.String())
+	}
+}
+
+func TestTUI_ShellCommand_DoubleExclaim(t *testing.T) {
+	in := strings.NewReader("!!echo hello shell\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "hello shell") {
+		t.Errorf("!! should show command output, got: %s", out.String())
+	}
+	// Should NOT send to LLM (no "Echo:" in output)
+	if strings.Contains(out.String(), "Echo:") {
+		t.Error("!! should not send to LLM")
+	}
+}
+
+func TestTUI_ShellCommand_SingleExclaim(t *testing.T) {
+	in := strings.NewReader("!echo test output\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	// Should show command output
+	if !strings.Contains(out.String(), "test output") {
+		t.Errorf("! should show command output, got: %s", out.String())
+	}
+	// Should also send to LLM (echo back)
+	if !strings.Contains(out.String(), "Echo:") {
+		t.Errorf("! should send output to LLM, got: %s", out.String())
+	}
+}
+
+func TestTUI_NameCommand(t *testing.T) {
+	in := strings.NewReader("/name my-session\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "Session named: my-session") {
+		t.Errorf("should confirm session name, got: %s", out.String())
+	}
+}
+
+func TestTUI_HelpShowsShellCommands(t *testing.T) {
+	in := strings.NewReader("/help\n/exit\n")
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	loop := agent.New(&mockProvider{}, nil)
+	ui := New(loop, WithIO(in, out, errOut))
+
+	_ = ui.Run(context.Background())
+
+	if !strings.Contains(out.String(), "!command") {
+		t.Errorf("help should show shell commands, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "/name") {
+		t.Errorf("help should show /name command, got: %s", out.String())
 	}
 }
 
