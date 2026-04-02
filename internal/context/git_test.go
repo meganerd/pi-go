@@ -16,8 +16,8 @@ func TestGitContext_InGitRepo(t *testing.T) {
 	if !strings.Contains(result, "Repository:") {
 		t.Errorf("should contain Repository:, got: %s", result)
 	}
-	if !strings.Contains(result, "Branch:") {
-		t.Errorf("should contain Branch:, got: %s", result)
+	if !strings.Contains(result, "Branch:") && !strings.Contains(result, "HEAD:") {
+		t.Errorf("should contain Branch: or HEAD:, got: %s", result)
 	}
 }
 
@@ -35,8 +35,8 @@ func TestGitContext_ContainsBranch(t *testing.T) {
 	if result == "" {
 		t.Skip("not running inside a git repo")
 	}
-	if !strings.Contains(result, "Branch:") {
-		t.Errorf("should contain Branch:, got: %s", result)
+	if !strings.Contains(result, "Branch:") && !strings.Contains(result, "HEAD:") {
+		t.Errorf("should contain Branch: or HEAD:, got: %s", result)
 	}
 }
 

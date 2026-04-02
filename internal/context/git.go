@@ -23,6 +23,8 @@ func GitContext(dir string) string {
 
 	if branch := gitCmd(dir, "branch", "--show-current"); branch != "" {
 		fmt.Fprintf(&b, "Branch: %s\n", branch)
+	} else if head := gitCmd(dir, "rev-parse", "--short", "HEAD"); head != "" {
+		fmt.Fprintf(&b, "HEAD: %s (detached)\n", head)
 	}
 
 	if log := gitCmd(dir, "log", "--oneline", "-5"); log != "" {
