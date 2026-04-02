@@ -39,6 +39,7 @@ func main() {
 		prompt       string
 		toolsArg     string
 		noTools      bool
+		sessionID    string
 	)
 
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
@@ -50,6 +51,7 @@ func main() {
 	flag.StringVar(&prompt, "prompt", "", "Send a single prompt and exit (use - for stdin)")
 	flag.StringVar(&toolsArg, "tools", "", "Comma-separated list of enabled tools (e.g. read,grep,find,ls)")
 	flag.BoolVar(&noTools, "no-tools", false, "Disable all tools")
+	flag.StringVar(&sessionID, "session-id", "", "Resume a specific session by ID")
 	flag.Parse()
 
 	if showVersion {
@@ -109,7 +111,7 @@ func main() {
 	}
 
 	// Initialize session
-	sess, err := initSession(cfg, resume)
+	sess, err := initSession(cfg, resume, sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: session unavailable: %v\n", err)
 	}
@@ -308,12 +310,22 @@ func initProvider(cfg *config.Config) (provider.Provider, error) {
 	return prov, nil
 }
 
-func initSession(cfg *config.Config, resume bool) (session.Store, error) {
+func initSession(cfg *config.Config, resume bool, sessionID string) (session.Store, error) {
 	if err := os.MkdirAll(cfg.SessionDir, 0755); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
 	}
 
 	mgr := session.NewManager(cfg.SessionDir)
+
+	// --session-id takes precedence over --resume
+	if sessionID != "" {
+		store, err := mgr.Open(sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("open session %q: %w", sessionID, err)
+		}
+		fmt.Fprintf(os.Stderr, "Resumed session: %s\n", sessionID)
+		return store, nil
+	}
 
 	if resume {
 		// Find last session for current directory
