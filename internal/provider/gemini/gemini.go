@@ -170,7 +170,7 @@ func (g *Gemini) StreamChat(ctx context.Context, req *provider.ChatRequest) (<-c
 
 	if httpResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(httpResp.Body)
-		httpResp.Body.Close()
+		_ = httpResp.Body.Close()
 		return nil, fmt.Errorf("gemini API error %d: %s", httpResp.StatusCode, string(respBody))
 	}
 
@@ -289,7 +289,7 @@ func convertMessages(msgs []message.Message) []apiContent {
 			}
 			for _, tc := range msg.ToolCalls {
 				var args map[string]interface{}
-				json.Unmarshal(tc.Input, &args)
+				_ = json.Unmarshal(tc.Input, &args)
 				c.Parts = append(c.Parts, apiPart{
 					FunctionCall: &apiFunctionCall{
 						Name: tc.Name,
