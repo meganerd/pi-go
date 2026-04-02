@@ -36,10 +36,19 @@ linters:
           allow:
             - $gostd
             - github.com/meganerd/
+            # Bubbletea TUI ecosystem
             - github.com/charmbracelet/
             - github.com/muesli/
             - github.com/erikgeiser/
             - github.com/rivo/uniseg
+            # Bubbletea transitive dependencies
+            - github.com/aymanbagabas/
+            - github.com/clipperhouse/
+            - github.com/lucasb-eyer/
+            - github.com/mattn/
+            - github.com/xo/
+            - github.com/atotto/
+            - github.com/MakeNowJust/
             - golang.org/x/
   exclusions:
     rules:
