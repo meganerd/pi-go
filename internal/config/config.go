@@ -107,9 +107,9 @@ func (c *Config) Validate() []string {
 	var warnings []string
 
 	// Provider validation
-	validProviders := map[string]bool{"anthropic": true, "openai": true, "openrouter": true, "zai": true}
+	validProviders := map[string]bool{"anthropic": true, "openai": true, "openrouter": true, "gemini": true, "zai": true}
 	if !validProviders[c.Provider] {
-		warnings = append(warnings, fmt.Sprintf("unknown provider %q — valid: anthropic, openai, openrouter, zai", c.Provider))
+		warnings = append(warnings, fmt.Sprintf("unknown provider %q — valid: anthropic, openai, openrouter, gemini, zai", c.Provider))
 	}
 
 	// Token limits
